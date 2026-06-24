@@ -14,8 +14,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-xl">Zillow Finder</CardTitle>
-          <CardDescription>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.webp" alt="Zillow Finder" className="h-10 mx-auto" />
+          <CardDescription className="text-center">
             Sign in with your username and password.
           </CardDescription>
         </CardHeader>
