@@ -53,7 +53,13 @@ export interface AppSettings {
   min_monthly_spread: number;
   min_revenue_to_rent_ratio: number;
   str_provider: string;
+  default_search_mode: SearchMode;
+  skip_states_within_days: number;
+  str_cache_ttl_days: number;
+  management_keywords: string[];
 }
+
+export type SearchMode = "states" | "url";
 
 export interface Search {
   id: string;
@@ -63,10 +69,26 @@ export interface Search {
   name: string | null;
   input_params: Record<string, unknown>;
   status: SearchStatus;
+  search_mode: SearchMode;
   apify_run_id: string | null;
   result_count: number;
   error: string | null;
   created_at: string;
+  finished_at: string | null;
+}
+
+export type StateRunStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
+
+export interface SearchStateRun {
+  id: string;
+  search_id: string;
+  state_code: string;
+  status: StateRunStatus;
+  apify_run_id: string | null;
+  result_count: number;
+  new_result_count: number;
+  error: string | null;
+  started_at: string | null;
   finished_at: string | null;
 }
 
@@ -95,6 +117,11 @@ export interface ResultRow {
   rent_zestimate: number | null;
   days_on_market: number | null;
   available_date: string | null;
+  owner_name: string | null;
+  owner_type: "owner" | "management" | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  broker_name: string | null;
   raw_json: Record<string, unknown> | null;
   created_at: string;
 }

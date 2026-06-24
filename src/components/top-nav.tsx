@@ -13,6 +13,7 @@ const NAV: NavItem[] = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/searches", label: "Searches" },
   { href: "/results", label: "Results" },
+  { href: "/guide", label: "Guide" },
   { href: "/data-sources", label: "Data Sources", adminOnly: true },
   { href: "/credentials", label: "Credentials", adminOnly: true },
   { href: "/users", label: "Users", adminOnly: true },

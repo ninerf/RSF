@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireRunner } from "@/lib/auth-run";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { startSearch, pollSearch } from "@/lib/search-engine";
+import { startSearch, pollSearch, startStateSearch } from "@/lib/search-engine";
 import { enrichSearch } from "@/lib/str/enrich";
 import type { ActorConfig } from "@/lib/types";
 
@@ -13,13 +13,86 @@ const RunSchema = z.object({
   name: z.string().trim().optional(),
   maxItems: z.number().int().min(1).max(2000),
   credentialId: z.string().uuid().optional().nullable(),
-  // userParams arrives as a JSON string of { fieldKey: value }.
   params: z.string(),
+});
+
+const StateRunSchema = z.object({
+  states: z.array(z.string().length(2)).min(1, "Select at least one state"),
+  maxPerState: z.number().int().min(1).max(2000),
+  minBeds: z.number().int().min(0).optional(),
+  maxRent: z.number().int().min(0).optional(),
+  ownerOnly: z.boolean(),
+  skipRecent: z.boolean(),
+  actorConfigId: z.string().uuid("Choose a data source"),
+  credentialId: z.string().uuid().optional().nullable(),
 });
 
 export type RunState =
   | { error?: string; success?: string; searchId?: string; credentialLabel?: string }
   | undefined;
+
+export async function runStateSearch(
+  _prev: RunState,
+  formData: FormData,
+): Promise<RunState> {
+  const profile = await requireRunner();
+
+  let states: string[];
+  try {
+    states = JSON.parse(String(formData.get("states") ?? "[]"));
+  } catch {
+    return { error: "Invalid states." };
+  }
+
+  const credRaw = formData.get("credentialId");
+  const parsed = StateRunSchema.safeParse({
+    states,
+    maxPerState: Number(formData.get("maxPerState") || 200),
+    minBeds: formData.get("minBeds") ? Number(formData.get("minBeds")) : undefined,
+    maxRent: formData.get("maxRent") ? Number(formData.get("maxRent")) : undefined,
+    ownerOnly: formData.get("ownerOnly") === "1",
+    skipRecent: formData.get("skipRecent") === "1",
+    actorConfigId: formData.get("actorConfigId"),
+    credentialId: credRaw && String(credRaw) !== "auto" ? String(credRaw) : null,
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
+  }
+
+  const admin = createAdminClient();
+  const { data: configRow } = await admin
+    .from("actor_configs")
+    .select("*")
+    .eq("id", parsed.data.actorConfigId)
+    .single();
+
+  const config = configRow as ActorConfig | null;
+  if (!config || !config.active) {
+    return { error: "Data source not found or inactive." };
+  }
+
+  const result = await startStateSearch({
+    config,
+    states: parsed.data.states,
+    maxPerState: parsed.data.maxPerState,
+    minBeds: parsed.data.minBeds,
+    maxRent: parsed.data.maxRent,
+    ownerOnly: parsed.data.ownerOnly,
+    skipRecent: parsed.data.skipRecent,
+    createdBy: profile.id,
+    forceCredentialId: parsed.data.credentialId,
+  });
+
+  if (!result.ok) return { error: result.error };
+
+  revalidatePath("/searches");
+  return {
+    success: `Search started across ${result.statesQueued} states.`,
+    searchId: result.searchId,
+    credentialLabel: result.credentialLabel,
+  };
+}
 
 export async function runSearch(
   _prev: RunState,

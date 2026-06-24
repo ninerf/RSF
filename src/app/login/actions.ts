@@ -33,13 +33,14 @@ export async function login(
 
   // Resolve username -> profile -> auth user (server-side, service role).
   const admin = createAdminClient();
-  const { data: profile } = await admin
+  const { data: profile, error: profileErr } = await admin
     .from("profiles")
     .select("id")
     .eq("username", username)
     .single();
 
-  if (!profile) {
+  if (profileErr || !profile) {
+    console.error("[login] profile lookup failed:", profileErr?.message);
     return { error: "Invalid username or password." };
   }
 
@@ -47,6 +48,7 @@ export async function login(
     await admin.auth.admin.getUserById(profile.id);
 
   if (userErr || !userRes.user?.email) {
+    console.error("[login] getUserById failed:", userErr?.message);
     return { error: "Invalid username or password." };
   }
 
@@ -58,6 +60,7 @@ export async function login(
   });
 
   if (error) {
+    console.error("[login] signInWithPassword failed:", error.status, error.message);
     return { error: "Invalid username or password." };
   }
 

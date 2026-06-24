@@ -6,6 +6,8 @@ import { checkBudget, recordUsage } from "@/lib/budget";
 import { resolveProvider } from "@/lib/providers/registry";
 import { buildInput } from "@/lib/providers/input-builder";
 import { mapResult } from "@/lib/providers/result-mapper";
+import { buildZillowStateUrl, STATE_BY_CODE } from "@/lib/constants/us-states";
+import { getSettings } from "@/lib/budget";
 import type { ActorConfig, Search } from "@/lib/types";
 
 export interface StartSearchResult {
@@ -13,6 +15,275 @@ export interface StartSearchResult {
   searchId?: string;
   error?: string;
   credentialLabel?: string;
+}
+
+export interface StartStateSearchResult {
+  ok: boolean;
+  searchId?: string;
+  statesQueued?: number;
+  error?: string;
+  credentialLabel?: string;
+}
+
+// ─── State-based search ────────────────────────────────────────────────────
+
+export async function startStateSearch(params: {
+  config: ActorConfig;
+  states: string[];
+  maxPerState: number;
+  minBeds?: number;
+  maxRent?: number;
+  ownerOnly: boolean;
+  skipRecent: boolean;
+  createdBy: string;
+  forceCredentialId?: string | null;
+}): Promise<StartStateSearchResult> {
+  const {
+    config, states, maxPerState, minBeds, maxRent,
+    ownerOnly, skipRecent, createdBy, forceCredentialId,
+  } = params;
+  const admin = createAdminClient();
+
+  const selection = await selectCredential(config.provider, forceCredentialId);
+  if ("error" in selection) return { ok: false, error: selection.error };
+  const { credential, token } = selection;
+
+  // Determine which states to skip (recently searched).
+  let statesToRun = [...states];
+  if (skipRecent) {
+    const settings = await getSettings();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - settings.skip_states_within_days);
+
+    const { data: recentRuns } = await admin
+      .from("search_state_runs")
+      .select("state_code, finished_at")
+      .eq("status", "succeeded")
+      .gte("finished_at", cutoff.toISOString());
+
+    const recentCodes = new Set(
+      (recentRuns ?? []).map((r: { state_code: string }) => r.state_code),
+    );
+    statesToRun = statesToRun.filter((s) => !recentCodes.has(s));
+  }
+
+  if (statesToRun.length === 0) {
+    return { ok: false, error: "All selected states were searched recently. Uncheck 'Skip states searched recently' or wait." };
+  }
+
+  // Prioritize: never-searched first, then oldest-searched first.
+  const { data: lastRuns } = await admin
+    .from("search_state_runs")
+    .select("state_code, finished_at")
+    .eq("status", "succeeded")
+    .in("state_code", statesToRun)
+    .order("finished_at", { ascending: false });
+
+  const lastRunMap = new Map<string, string>();
+  for (const r of (lastRuns ?? []) as { state_code: string; finished_at: string }[]) {
+    if (!lastRunMap.has(r.state_code)) lastRunMap.set(r.state_code, r.finished_at);
+  }
+
+  statesToRun.sort((a, b) => {
+    const aTime = lastRunMap.get(a);
+    const bTime = lastRunMap.get(b);
+    if (!aTime && !bTime) return 0;
+    if (!aTime) return -1;
+    if (!bTime) return 1;
+    return new Date(aTime).getTime() - new Date(bTime).getTime();
+  });
+
+  // Create the parent search row.
+  const { data: searchRow, error: insertErr } = await admin
+    .from("searches")
+    .insert({
+      created_by: createdBy,
+      actor_config_id: config.id,
+      credential_id: credential.id,
+      name: `State search (${statesToRun.length} states)`,
+      search_mode: "states",
+      input_params: { states: statesToRun, maxPerState, minBeds, maxRent, ownerOnly },
+      status: "running",
+    })
+    .select("*")
+    .single();
+
+  if (insertErr || !searchRow) {
+    return { ok: false, error: "Could not create search record." };
+  }
+
+  const search = searchRow as Search;
+
+  // Create sub-run rows.
+  const subRows = statesToRun.map((code) => ({
+    search_id: search.id,
+    state_code: code,
+    status: "pending" as const,
+  }));
+
+  // Also mark skipped states.
+  const skippedStates = states.filter((s) => !statesToRun.includes(s));
+  const skippedRows = skippedStates.map((code) => ({
+    search_id: search.id,
+    state_code: code,
+    status: "skipped" as const,
+    finished_at: new Date().toISOString(),
+  }));
+
+  await admin.from("search_state_runs").insert([...subRows, ...skippedRows]);
+
+  // Start the first state run (the rest will be picked up by polling).
+  const firstState = statesToRun[0];
+  await startSingleStateRun({
+    searchId: search.id,
+    stateCode: firstState,
+    config,
+    token,
+    credential,
+    maxPerState,
+    minBeds,
+    maxRent,
+  });
+
+  return {
+    ok: true,
+    searchId: search.id,
+    statesQueued: statesToRun.length,
+    credentialLabel: credential.label,
+  };
+}
+
+// Start one state sub-run.
+async function startSingleStateRun(params: {
+  searchId: string;
+  stateCode: string;
+  config: ActorConfig;
+  token: string;
+  credential: { id: string };
+  maxPerState: number;
+  minBeds?: number;
+  maxRent?: number;
+}) {
+  const { searchId, stateCode, config, token, credential, maxPerState, minBeds, maxRent } = params;
+  const admin = createAdminClient();
+
+  const stateInfo = STATE_BY_CODE[stateCode as keyof typeof STATE_BY_CODE];
+  if (!stateInfo) return;
+
+  const url = buildZillowStateUrl(stateInfo.regionId, {
+    minBeds: minBeds || undefined,
+    maxPrice: maxRent || undefined,
+  });
+
+  // Build input as if the user pasted this URL.
+  const input = buildInput(config, { url });
+  const provider = resolveProvider(config.provider);
+
+  // Budget check per state sub-run.
+  const budget = await checkBudget(credential as any, maxPerState);
+  if (!budget.ok) {
+    await admin
+      .from("search_state_runs")
+      .update({ status: "failed", error: budget.reason, finished_at: new Date().toISOString() })
+      .eq("search_id", searchId)
+      .eq("state_code", stateCode);
+    return;
+  }
+
+  await admin
+    .from("search_state_runs")
+    .update({ status: "running", started_at: new Date().toISOString() })
+    .eq("search_id", searchId)
+    .eq("state_code", stateCode);
+
+  try {
+    const handle = await provider.start({ config, token, input, maxItems: maxPerState });
+
+    if (handle.runId === null) {
+      // Synchronous result.
+      await finalizeStateRun({
+        searchId,
+        stateCode,
+        config,
+        items: handle.items ?? [],
+        credentialId: credential.id,
+      });
+    } else {
+      await admin
+        .from("search_state_runs")
+        .update({ apify_run_id: handle.runId })
+        .eq("search_id", searchId)
+        .eq("state_code", stateCode);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Run failed.";
+    await admin
+      .from("search_state_runs")
+      .update({ status: "failed", error: message, finished_at: new Date().toISOString() })
+      .eq("search_id", searchId)
+      .eq("state_code", stateCode);
+  }
+}
+
+// Finalize a state sub-run: upsert results, advance to next state.
+async function finalizeStateRun(params: {
+  searchId: string;
+  stateCode: string;
+  config: ActorConfig;
+  items: Record<string, unknown>[];
+  credentialId: string;
+}) {
+  const { searchId, stateCode, config, items, credentialId } = params;
+  const admin = createAdminClient();
+
+  const rows = items
+    .map((item) => mapResult(item, config))
+    .filter((r): r is NonNullable<typeof r> => r !== null)
+    .map((r) => ({ ...r, search_id: searchId }));
+
+  let newCount = 0;
+  if (rows.length > 0) {
+    const { data: upserted } = await admin
+      .from("results")
+      .upsert(rows, { onConflict: "source,external_id", ignoreDuplicates: false })
+      .select("id");
+    newCount = upserted?.length ?? rows.length;
+  }
+
+  await admin
+    .from("search_state_runs")
+    .update({
+      status: "succeeded",
+      result_count: rows.length,
+      new_result_count: newCount,
+      finished_at: new Date().toISOString(),
+    })
+    .eq("search_id", searchId)
+    .eq("state_code", stateCode);
+
+  if (rows.length > 0) {
+    await recordUsage({ credentialId, searchId, resultsCharged: rows.length });
+  }
+
+  // Update parent search result count.
+  const { data: allRuns } = await admin
+    .from("search_state_runs")
+    .select("status, result_count")
+    .eq("search_id", searchId);
+
+  const runs = (allRuns ?? []) as { status: string; result_count: number }[];
+  const totalResults = runs.reduce((sum, r) => sum + r.result_count, 0);
+  const allDone = runs.every((r) => ["succeeded", "failed", "skipped"].includes(r.status));
+
+  await admin
+    .from("searches")
+    .update({
+      result_count: totalResults,
+      ...(allDone
+        ? { status: "succeeded", finished_at: new Date().toISOString() }
+        : {}),
+    })
+    .eq("id", searchId);
 }
 
 // Start a search: select credential, budget-guard, build input, start the
@@ -95,7 +366,8 @@ export async function startSearch(params: {
 }
 
 // Poll a running search; on completion upsert results, record usage, update
-// status. Safe to call repeatedly.
+// status. Safe to call repeatedly. For state-mode searches, also advances
+// to the next pending state.
 export async function pollSearch(searchId: string): Promise<Search> {
   const admin = createAdminClient();
   const { data: searchRow } = await admin
@@ -110,6 +382,12 @@ export async function pollSearch(searchId: string): Promise<Search> {
     return search;
   }
 
+  // ─── State-mode: poll active sub-runs and advance ───
+  if (search.search_mode === "states") {
+    return pollStateSearch(search);
+  }
+
+  // ─── URL-mode (legacy) ───
   const { data: configRow } = await admin
     .from("actor_configs")
     .select("*")
@@ -153,6 +431,139 @@ export async function pollSearch(searchId: string): Promise<Search> {
     config,
     items: poll.items ?? [],
     credentialId: search.credential_id!,
+  });
+}
+
+// Poll state-mode search: check active sub-run, finalize if done, start next.
+async function pollStateSearch(search: Search): Promise<Search> {
+  const admin = createAdminClient();
+
+  // Find the currently running sub-run.
+  const { data: runningRuns } = await admin
+    .from("search_state_runs")
+    .select("*")
+    .eq("search_id", search.id)
+    .eq("status", "running")
+    .limit(1);
+
+  const activeRun = (runningRuns ?? [])[0] as
+    | { id: string; state_code: string; apify_run_id: string | null }
+    | undefined;
+
+  if (!activeRun || !activeRun.apify_run_id) {
+    // No active run — maybe start the next pending one.
+    await advanceToNextState(search);
+    const { data } = await admin.from("searches").select("*").eq("id", search.id).single();
+    return data as Search;
+  }
+
+  // Poll the active sub-run's Apify job.
+  const { data: configRow } = await admin
+    .from("actor_configs")
+    .select("*")
+    .eq("id", search.actor_config_id)
+    .single();
+  const config = configRow as ActorConfig;
+
+  const selection = await selectCredential(config.provider, search.credential_id);
+  if ("error" in selection) return search;
+
+  const provider = resolveProvider(config.provider);
+  const poll = await provider.poll({
+    config,
+    token: selection.token,
+    runId: activeRun.apify_run_id,
+  });
+
+  if (poll.status === "running") return search;
+
+  if (poll.status === "failed" || poll.status === "aborted") {
+    await admin
+      .from("search_state_runs")
+      .update({
+        status: "failed",
+        error: poll.error ?? "Run failed.",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", activeRun.id);
+  } else {
+    // succeeded — finalize this state run.
+    await finalizeStateRun({
+      searchId: search.id,
+      stateCode: activeRun.state_code,
+      config,
+      items: poll.items ?? [],
+      credentialId: search.credential_id!,
+    });
+  }
+
+  // Advance to next state.
+  await advanceToNextState(search);
+
+  const { data } = await admin.from("searches").select("*").eq("id", search.id).single();
+  return data as Search;
+}
+
+// Start the next pending state sub-run, or mark the parent as done.
+async function advanceToNextState(search: Search) {
+  const admin = createAdminClient();
+
+  const { data: pendingRuns } = await admin
+    .from("search_state_runs")
+    .select("state_code")
+    .eq("search_id", search.id)
+    .eq("status", "pending")
+    .limit(1);
+
+  if (!pendingRuns || pendingRuns.length === 0) {
+    // All done — finalize parent.
+    const { data: allRuns } = await admin
+      .from("search_state_runs")
+      .select("status, result_count")
+      .eq("search_id", search.id);
+
+    const runs = (allRuns ?? []) as { status: string; result_count: number }[];
+    const totalResults = runs.reduce((sum, r) => sum + r.result_count, 0);
+
+    await admin
+      .from("searches")
+      .update({
+        status: "succeeded",
+        result_count: totalResults,
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", search.id);
+    return;
+  }
+
+  // Start next state.
+  const nextState = (pendingRuns[0] as { state_code: string }).state_code;
+
+  const { data: configRow } = await admin
+    .from("actor_configs")
+    .select("*")
+    .eq("id", search.actor_config_id)
+    .single();
+  const config = configRow as ActorConfig;
+
+  const selection = await selectCredential(config.provider, search.credential_id);
+  if ("error" in selection) return;
+
+  const inputParams = search.input_params as {
+    maxPerState?: number;
+    minBeds?: number;
+    maxRent?: number;
+  };
+
+  await startSingleStateRun({
+    searchId: search.id,
+    stateCode: nextState,
+    config,
+    token: selection.token,
+    credential: selection.credential,
+    maxPerState: inputParams.maxPerState ?? 200,
+    minBeds: inputParams.minBeds,
+    maxRent: inputParams.maxRent,
   });
 }
 

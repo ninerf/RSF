@@ -51,15 +51,31 @@ export default async function SearchesPage() {
   let configOptions: ActorConfigOption[] = [];
   let credentialOptions: CredentialOption[] = [];
   let strProvider = "apify_airbnb";
+  let recentlySearched: Record<string, string> = {};
 
   if (canRun) {
     const admin = createAdminClient();
-    const [{ data: configs }, { data: creds }, settings] = await Promise.all([
+    const [{ data: configs }, { data: creds }, settings, { data: recentRuns }] = await Promise.all([
       admin.from("actor_configs").select("*").eq("active", true),
       admin.from("api_credentials").select("*").eq("active", true),
       getSettings(),
+      admin
+        .from("search_state_runs")
+        .select("state_code, finished_at")
+        .eq("status", "succeeded")
+        .order("finished_at", { ascending: false }),
     ]);
     strProvider = settings.str_provider;
+
+    // Build recently searched map (show relative days).
+    const now = Date.now();
+    const seen = new Set<string>();
+    for (const r of (recentRuns ?? []) as { state_code: string; finished_at: string }[]) {
+      if (seen.has(r.state_code)) continue;
+      seen.add(r.state_code);
+      const days = Math.floor((now - new Date(r.finished_at).getTime()) / 86400000);
+      recentlySearched[r.state_code] = days === 0 ? "today" : `${days}d ago`;
+    }
 
     configOptions = ((configs as ActorConfig[]) ?? []).map((c) => ({
       id: c.id,
@@ -96,6 +112,7 @@ export default async function SearchesPage() {
             <NewSearchForm
               configs={configOptions}
               credentials={credentialOptions}
+              recentlySearched={recentlySearched}
             />
           </CardContent>
         </Card>

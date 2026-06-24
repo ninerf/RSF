@@ -1,0 +1,84 @@
+/** All 50 US states with STR availability + Zillow region IDs for URL construction. */
+export const US_STATES = [
+  { code: "AL", name: "Alabama", regionId: 4 },
+  { code: "AK", name: "Alaska", regionId: 5 },
+  { code: "AZ", name: "Arizona", regionId: 7 },
+  { code: "AR", name: "Arkansas", regionId: 6 },
+  { code: "CA", name: "California", regionId: 9 },
+  { code: "CO", name: "Colorado", regionId: 10 },
+  { code: "CT", name: "Connecticut", regionId: 11 },
+  { code: "DE", name: "Delaware", regionId: 12 },
+  { code: "FL", name: "Florida", regionId: 14 },
+  { code: "GA", name: "Georgia", regionId: 16 },
+  { code: "HI", name: "Hawaii", regionId: 17 },
+  { code: "ID", name: "Idaho", regionId: 18 },
+  { code: "IL", name: "Illinois", regionId: 19 },
+  { code: "IN", name: "Indiana", regionId: 20 },
+  { code: "IA", name: "Iowa", regionId: 21 },
+  { code: "KS", name: "Kansas", regionId: 22 },
+  { code: "KY", name: "Kentucky", regionId: 23 },
+  { code: "LA", name: "Louisiana", regionId: 24 },
+  { code: "ME", name: "Maine", regionId: 26 },
+  { code: "MD", name: "Maryland", regionId: 25 },
+  { code: "MA", name: "Massachusetts", regionId: 27 },
+  { code: "MI", name: "Michigan", regionId: 28 },
+  { code: "MN", name: "Minnesota", regionId: 29 },
+  { code: "MS", name: "Mississippi", regionId: 31 },
+  { code: "MO", name: "Missouri", regionId: 30 },
+  { code: "MT", name: "Montana", regionId: 32 },
+  { code: "NE", name: "Nebraska", regionId: 33 },
+  { code: "NV", name: "Nevada", regionId: 36 },
+  { code: "NH", name: "New Hampshire", regionId: 34 },
+  { code: "NJ", name: "New Jersey", regionId: 37 },
+  { code: "NM", name: "New Mexico", regionId: 38 },
+  { code: "NY", name: "New York", regionId: 39 },
+  { code: "NC", name: "North Carolina", regionId: 40 },
+  { code: "ND", name: "North Dakota", regionId: 41 },
+  { code: "OH", name: "Ohio", regionId: 42 },
+  { code: "OK", name: "Oklahoma", regionId: 43 },
+  { code: "OR", name: "Oregon", regionId: 44 },
+  { code: "PA", name: "Pennsylvania", regionId: 45 },
+  { code: "RI", name: "Rhode Island", regionId: 46 },
+  { code: "SC", name: "South Carolina", regionId: 47 },
+  { code: "SD", name: "South Dakota", regionId: 48 },
+  { code: "TN", name: "Tennessee", regionId: 49 },
+  { code: "TX", name: "Texas", regionId: 50 },
+  { code: "UT", name: "Utah", regionId: 51 },
+  { code: "VT", name: "Vermont", regionId: 53 },
+  { code: "VA", name: "Virginia", regionId: 52 },
+  { code: "WA", name: "Washington", regionId: 54 },
+  { code: "WV", name: "West Virginia", regionId: 56 },
+  { code: "WI", name: "Wisconsin", regionId: 55 },
+  { code: "WY", name: "Wyoming", regionId: 57 },
+] as const;
+
+export type StateCode = (typeof US_STATES)[number]["code"];
+
+export const STATE_BY_CODE = Object.fromEntries(
+  US_STATES.map((s) => [s.code, s]),
+) as Record<StateCode, (typeof US_STATES)[number]>;
+
+/** Build a Zillow for_rent search URL for a state. */
+export function buildZillowStateUrl(
+  regionId: number,
+  opts?: { minBeds?: number; maxPrice?: number },
+): string {
+  const filterState: Record<string, unknown> = {
+    isForRent: { value: true },
+    isForSaleByAgent: { value: false },
+    isForSaleByOwner: { value: false },
+    isNewConstruction: { value: false },
+    isComingSoon: { value: false },
+    isAuction: { value: false },
+    isForSaleForeclosure: { value: false },
+  };
+  if (opts?.minBeds) filterState.beds = { min: opts.minBeds };
+  if (opts?.maxPrice) filterState.price = { max: opts.maxPrice };
+
+  const searchQueryState = {
+    regionSelection: [{ regionId, regionType: 2 }], // regionType 2 = state
+    filterState,
+  };
+
+  return `https://www.zillow.com/homes/for_rent/?searchQueryState=${encodeURIComponent(JSON.stringify(searchQueryState))}`;
+}

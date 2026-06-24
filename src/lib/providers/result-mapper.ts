@@ -42,6 +42,23 @@ const NUMERIC_FIELDS = new Set([
   "rent_zestimate",
 ]);
 
+// Keywords that indicate a management company rather than an individual owner.
+const MANAGEMENT_KEYWORDS = [
+  "llc", "inc", "corp", "realty", "properties", "management",
+  "group", "capital", "investments", "partners", "homes", "rentals",
+  "property", "real estate", "holdings", "ventures", "agency",
+];
+
+/** Classify owner type based on broker/owner name. */
+function classifyOwnerType(name: string | null): "owner" | "management" | null {
+  if (!name) return null;
+  const lower = name.toLowerCase();
+  for (const kw of MANAGEMENT_KEYWORDS) {
+    if (lower.includes(kw)) return "management";
+  }
+  return "owner";
+}
+
 // Generic mapper driven by config.result_mapping: { columnName: "source.path" }.
 // `days_on_market` and string fields are coerced appropriately. The full item
 // is always preserved in raw_json. Returns null if no external_id resolves.
@@ -70,5 +87,18 @@ export function mapResult(
   }
 
   if (!row.external_id) return null;
+
+  // Extract owner/contact info from Zillow data.
+  const brokerName = toStr(get(item, "brokerName"));
+  const brokerPhone = toStr(get(item, "hdpData.homeInfo.brokerPhone"));
+  const attributionName = toStr(get(item, "attributionInfo.agentName"));
+  const attributionPhone = toStr(get(item, "attributionInfo.agentPhoneNumber"));
+
+  row.owner_name = brokerName || attributionName || null;
+  row.broker_name = brokerName || null;
+  row.contact_phone = brokerPhone || attributionPhone || null;
+  row.contact_email = toStr(get(item, "attributionInfo.agentEmail")) || null;
+  row.owner_type = classifyOwnerType(row.owner_name);
+
   return row;
 }
