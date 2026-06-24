@@ -33,8 +33,9 @@ export function TopNav({
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
-        <Link href="/dashboard" className="font-semibold tracking-tight">
-          Zillow Finder
+        <Link href="/dashboard" className="shrink-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.webp" alt="Zillow Finder" className="h-8" />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           {items.map((item) => {
