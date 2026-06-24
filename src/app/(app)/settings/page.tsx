@@ -1,13 +1,16 @@
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireProfile } from "@/lib/auth";
+import { getSettings } from "@/lib/budget";
+import { SettingsForm } from "./settings-form";
 
 export default async function SettingsPage() {
   const profile = await requireProfile();
 
   return (
-    <div>
-      <PageHeader title="Settings" description="Your account." />
+    <div className="space-y-6">
+      <PageHeader title="Settings" description="Your account and app configuration." />
+
       <Card className="max-w-md">
         <CardHeader>
           <CardTitle>Account</CardTitle>
@@ -27,6 +30,17 @@ export default async function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {profile.role === "admin" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>App settings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SettingsForm settings={await getSettings()} />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

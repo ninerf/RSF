@@ -70,8 +70,7 @@ export async function getRevenueAirbnbApify(
   // Poll until terminal or timeout.
   const deadline = Date.now() + timeoutMs;
   let datasetId: string | undefined;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  while (Date.now() <= deadline) {
     const r = await client.run(run.id).get();
     if (!r) break;
     if (r.status === "SUCCEEDED") {
@@ -79,7 +78,6 @@ export async function getRevenueAirbnbApify(
       break;
     }
     if (["FAILED", "TIMED-OUT", "ABORTED"].includes(r.status)) break;
-    if (Date.now() > deadline) break;
     await new Promise((res) => setTimeout(res, pollMs));
   }
 

@@ -49,7 +49,8 @@ export const apifyProvider: Provider = {
     switch (run.status) {
       case "READY":
       case "RUNNING":
-      case "CREATED":
+      case "ABORTING":
+      case "TIMING-OUT":
         return { status: "running" };
       case "SUCCEEDED": {
         const datasetId = run.defaultDatasetId;

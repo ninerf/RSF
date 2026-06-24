@@ -79,7 +79,6 @@ export function NewSearchForm({
 
   useEffect(() => {
     if (!startedId) return;
-    setStatus("running");
     let active = true;
     const tick = async () => {
       try {
@@ -199,7 +198,7 @@ export function NewSearchForm({
             {state.credentialLabel
               ? ` Using credential: ${state.credentialLabel}.`
               : ""}
-            {status ? ` Status: ${status}.` : ""}
+            {` Status: ${status ?? "running"}.`}
           </p>
         )}
 

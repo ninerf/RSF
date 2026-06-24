@@ -93,3 +93,73 @@ src/
 supabase/migrations/       # 0001 schema, 0002 RLS, 0003 vault helpers
 scripts/seed-admin.mjs     # npm run seed
 ```
+
+## Phase 2 — Search engine + STR-revenue valuation (USA only)
+
+### How it works
+
+- Everything is driven by `actor_configs` + `api_credentials` + `app_settings`.
+  Adding a data source = inserting an `actor_config` row (and an
+  `api_credential` if it needs a key). No code changes.
+- Two provider kinds: `apify` (start → poll → fetch dataset, never `.call()`)
+  and `http_api` (REST with a bearer token from Vault).
+- Two input modes per config: `url` (paste a search URL) and `form` (render
+  fields from `input_fields`, deep-merge into `input_template` by replacing
+  `{{placeholders}}`).
+
+### Migrations
+
+Apply `0004` (STR + deal columns, caches) and `0005` (seed the Zillow
+`actor_config`) in addition to Phase 1's `0001`–`0003`.
+
+### Running a search
+
+1. Admin (or a user with `can_run_searches`) opens Searches → New search.
+2. Pick the Zillow data source, paste a `for_rent` URL that contains
+   `?searchQueryState=` (apply filters on zillow.com and copy the URL — that's
+   how arbitrary filters flow through), set Max results, choose a credential or
+   Auto, confirm the estimated max cost, and Run.
+3. The run starts async on Apify; the page polls
+   `/api/searches/[id]/status` until it finishes. Results upsert on
+   `(source, external_id)`, so re-running the same area de-dupes.
+
+### Locked actor schemas
+
+- Zillow `maxcopell/zillow-scraper`: input is only `searchUrls` +
+  `extractionMethod` (no in-input item cap). The runner caps cost with Apify's
+  platform-level `maxItems` run option.
+- Airbnb `tri_angle/airbnb-scraper`: `locationQueries`, `maxResults`,
+  `minBedrooms`, `currency`; output `price.amount`, `rating.reviewsCount`.
+
+### STR-revenue valuation
+
+- Three interchangeable adapters behind one interface (`getRevenue`):
+  `apify_airbnb` (default, area-based, runs on the Apify key), `airdna`
+  (`http_api`, inactive until a token is added — fails gracefully with a
+  "needs credential" state), and `airroi` (`http_api`, self-serve).
+- Results cache per `(provider, city, state, beds)` in `str_market_cache`, so
+  the same area is paid for once, not once per property.
+- Enrichment is re-runnable without re-scraping Zillow (it operates on stored
+  results) and writes `result_enrichment` with ADR, occupancy, monthly/annual
+  revenue, spread, and a deal verdict.
+
+### Deal evaluation
+
+- `app_settings`: `cost_haircut_pct` (default 25), `min_monthly_spread`,
+  `min_revenue_to_rent_ratio`.
+- `net = str_monthly_revenue × (1 − haircut/100)`,
+  `spread = net − rent`, `ratio = str_monthly_revenue / rent`.
+- Verdict: Good if spread and ratio both clear; Marginal if one clears; else
+  Poor. Changing thresholds in Settings re-derives verdicts with no API calls.
+
+### Budget guard
+
+Runs before every paid execution (Apify runs and STR calls). It picks the
+active credential for the provider with the most remaining monthly headroom
+(or a manual override), rejects the run if the credential or the global budget
+would be exceeded while `hard_stop` is on, and after completion increments
+`results_used`, writes a `usage_log` row, and honors monthly resets.
+
+### Tests
+
+`npm run test` runs the deal-evaluation unit tests (Node's built-in runner).
