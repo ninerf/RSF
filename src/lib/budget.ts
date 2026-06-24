@@ -10,7 +10,15 @@ export async function getSettings(): Promise<AppSettings> {
     .select("*")
     .eq("id", 1)
     .single();
-  return data as AppSettings;
+  // Provide defaults for Phase 3 columns that may not exist if migration 0006
+  // hasn't been applied yet.
+  return {
+    default_search_mode: "states",
+    skip_states_within_days: 7,
+    str_cache_ttl_days: 30,
+    management_keywords: ["LLC", "Inc", "Corp", "Realty", "Properties", "Management", "Group"],
+    ...(data as object),
+  } as AppSettings;
 }
 
 // Sum of results_used across all credentials this month — used for the global

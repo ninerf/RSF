@@ -55,26 +55,31 @@ export default async function SearchesPage() {
 
   if (canRun) {
     const admin = createAdminClient();
-    const [{ data: configs }, { data: creds }, settings, { data: recentRuns }] = await Promise.all([
+    const [{ data: configs }, { data: creds }, settings] = await Promise.all([
       admin.from("actor_configs").select("*").eq("active", true),
       admin.from("api_credentials").select("*").eq("active", true),
       getSettings(),
-      admin
-        .from("search_state_runs")
-        .select("state_code, finished_at")
-        .eq("status", "succeeded")
-        .order("finished_at", { ascending: false }),
     ]);
     strProvider = settings.str_provider;
 
-    // Build recently searched map (show relative days).
-    const now = Date.now();
-    const seen = new Set<string>();
-    for (const r of (recentRuns ?? []) as { state_code: string; finished_at: string }[]) {
-      if (seen.has(r.state_code)) continue;
-      seen.add(r.state_code);
-      const days = Math.floor((now - new Date(r.finished_at).getTime()) / 86400000);
-      recentlySearched[r.state_code] = days === 0 ? "today" : `${days}d ago`;
+    // Fetch recently searched states (gracefully handles missing table).
+    try {
+      const { data: recentRuns } = await admin
+        .from("search_state_runs")
+        .select("state_code, finished_at")
+        .eq("status", "succeeded")
+        .order("finished_at", { ascending: false });
+
+      const now = Date.now();
+      const seen = new Set<string>();
+      for (const r of (recentRuns ?? []) as { state_code: string; finished_at: string }[]) {
+        if (seen.has(r.state_code)) continue;
+        seen.add(r.state_code);
+        const days = Math.floor((now - new Date(r.finished_at).getTime()) / 86400000);
+        recentlySearched[r.state_code] = days === 0 ? "today" : `${days}d ago`;
+      }
+    } catch {
+      // Table doesn't exist yet — migration 0006 not applied. Continue without it.
     }
 
     configOptions = ((configs as ActorConfig[]) ?? []).map((c) => ({

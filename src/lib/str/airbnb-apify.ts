@@ -3,36 +3,11 @@ import "server-only";
 import { ApifyClient } from "apify-client";
 import type { RevenueInput, RevenueResult } from "@/lib/types";
 
-const AIRBNB_ACTOR_ID = "tri_angle/airbnb-scraper";
+// Uses malikgen/airbnb-revenue-calculator — a proper AirDNA alternative on Apify.
+// $5/1000 results, uses your existing Apify token. Gives real occupancy, ADR,
+// and revenue estimates from Airbnb's forward calendar data.
+const REVENUE_ACTOR_ID = "malikgen/airbnb-revenue-calculator";
 
-// Parse "$107" / "$1,234" -> 107 / 1234.
-function parseMoney(v: unknown): number | null {
-  if (v == null) return null;
-  const n = Number(String(v).replace(/[^0-9.]/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-interface AirbnbItem {
-  price?: { amount?: string; qualifier?: string };
-  rating?: { reviewsCount?: number };
-}
-
-// Occupancy proxy from review volume. Reviews are a weak signal of bookings;
-// we map review count to an occupancy band, capped at 0.70. Listings with no
-// reviews fall back to a conservative 0.45 baseline.
-function occupancyFromReviews(reviewCounts: number[]): number {
-  if (reviewCounts.length === 0) return 0.45;
-  const avg =
-    reviewCounts.reduce((a, b) => a + b, 0) / reviewCounts.length;
-  // ~ every 12 reviews ≈ +5% occupancy over a 0.45 base, capped at 0.70.
-  const est = 0.45 + Math.min(avg / 12, 5) * 0.05;
-  return Math.min(est, 0.7);
-}
-
-// Apify Airbnb market-data adapter (DEFAULT). Area-based: queries the city
-// with a bedroom filter, computes ADR as the mean nightly rate of comps and an
-// occupancy proxy from review counts. Runs async (start → poll) so it never
-// blocks past Vercel's function timeout.
 export async function getRevenueAirbnbApify(
   input: RevenueInput,
   token: string,
@@ -40,32 +15,24 @@ export async function getRevenueAirbnbApify(
 ): Promise<RevenueResult> {
   const { city, state, beds } = input;
   if (!city) {
-    return {
-      adr: null,
-      occupancy: null,
-      monthly_revenue: null,
-      annual_revenue: null,
-      provider: "apify_airbnb",
-    };
+    return { adr: null, occupancy: null, monthly_revenue: null, annual_revenue: null, provider: "apify_airbnb" };
   }
 
-  const maxItems = options.maxItems ?? 50;
-  const pollMs = options.pollMs ?? 3000;
-  const timeoutMs = options.timeoutMs ?? 55000;
+  const maxItems = options.maxItems ?? 20;
+  const pollMs = options.pollMs ?? 5000;
+  const timeoutMs = options.timeoutMs ?? 120000; // revenue calc takes longer
 
   const client = new ApifyClient({ token });
-  const locationQuery = state ? `${city}, ${state}` : city;
+  const location = state ? `${city}, ${state}` : city;
 
   const actorInput: Record<string, unknown> = {
-    locationQueries: [locationQuery],
-    currency: "USD",
+    location,
     maxResults: maxItems,
+    currency: "USD",
   };
   if (beds && beds > 0) actorInput.minBedrooms = Math.floor(beds);
 
-  const run = await client
-    .actor(AIRBNB_ACTOR_ID)
-    .start(actorInput, { maxItems });
+  const run = await client.actor(REVENUE_ACTOR_ID).start(actorInput);
 
   // Poll until terminal or timeout.
   const deadline = Date.now() + timeoutMs;
@@ -73,56 +40,57 @@ export async function getRevenueAirbnbApify(
   while (Date.now() <= deadline) {
     const r = await client.run(run.id).get();
     if (!r) break;
-    if (r.status === "SUCCEEDED") {
-      datasetId = r.defaultDatasetId;
-      break;
-    }
+    if (r.status === "SUCCEEDED") { datasetId = r.defaultDatasetId; break; }
     if (["FAILED", "TIMED-OUT", "ABORTED"].includes(r.status)) break;
     await new Promise((res) => setTimeout(res, pollMs));
   }
 
   if (!datasetId) {
-    return {
-      adr: null,
-      occupancy: null,
-      monthly_revenue: null,
-      annual_revenue: null,
-      provider: "apify_airbnb",
-    };
+    return { adr: null, occupancy: null, monthly_revenue: null, annual_revenue: null, provider: "apify_airbnb" };
   }
 
   const { items } = await client.dataset(datasetId).listItems();
-  const comps = items as unknown as AirbnbItem[];
 
-  const nightly = comps
-    .map((c) => parseMoney(c.price?.amount))
-    .filter((n): n is number => n !== null);
-
-  if (nightly.length === 0) {
-    return {
-      adr: null,
-      occupancy: null,
-      monthly_revenue: null,
-      annual_revenue: null,
-      comps: items as unknown[],
-      provider: "apify_airbnb",
-    };
+  if (!items || items.length === 0) {
+    return { adr: null, occupancy: null, monthly_revenue: null, annual_revenue: null, provider: "apify_airbnb" };
   }
 
-  const adr = nightly.reduce((a, b) => a + b, 0) / nightly.length;
-  const reviewCounts = comps
-    .map((c) => c.rating?.reviewsCount)
-    .filter((n): n is number => typeof n === "number");
-  const occupancy = occupancyFromReviews(reviewCounts);
-  const monthly_revenue = adr * 30 * occupancy;
-  const annual_revenue = monthly_revenue * 12;
+  // Aggregate across comps: average the ADR, occupancy (90-day), and revenue.
+  type Item = {
+    adr?: number;
+    occupancyPct?: { d90?: number };
+    occupancyUsedPct?: number;
+    estimatedRevenueMonthly?: number;
+    estimatedRevenueAnnual?: number;
+  };
+
+  const comps = items as unknown as Item[];
+  const adrs: number[] = [];
+  const occs: number[] = [];
+  const monthlyRevs: number[] = [];
+  const annualRevs: number[] = [];
+
+  for (const c of comps) {
+    if (c.adr != null) adrs.push(c.adr);
+    const occ = c.occupancyUsedPct ?? c.occupancyPct?.d90;
+    if (occ != null) occs.push(occ / 100); // convert from % to decimal
+    if (c.estimatedRevenueMonthly != null) monthlyRevs.push(c.estimatedRevenueMonthly);
+    if (c.estimatedRevenueAnnual != null) annualRevs.push(c.estimatedRevenueAnnual);
+  }
+
+  const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+  const adr = avg(adrs);
+  const occupancy = avg(occs);
+  const monthly_revenue = avg(monthlyRevs);
+  const annual_revenue = avg(annualRevs);
 
   return {
-    adr: Math.round(adr * 100) / 100,
-    occupancy: Math.round(occupancy * 1000) / 1000,
-    monthly_revenue: Math.round(monthly_revenue),
-    annual_revenue: Math.round(annual_revenue),
-    comps: items.slice(0, 10) as unknown[],
+    adr: adr != null ? Math.round(adr * 100) / 100 : null,
+    occupancy: occupancy != null ? Math.round(occupancy * 1000) / 1000 : null,
+    monthly_revenue: monthly_revenue != null ? Math.round(monthly_revenue) : null,
+    annual_revenue: annual_revenue != null ? Math.round(annual_revenue) : null,
+    comps: items.slice(0, 5) as unknown[],
     provider: "apify_airbnb",
   };
 }
