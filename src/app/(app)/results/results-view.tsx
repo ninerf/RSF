@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { formatUSD, formatNum, formatPct } from "@/lib/format";
+import { enrichResult } from "./actions";
 import type { DealVerdict } from "@/lib/types";
 
 export interface ResultView {
@@ -46,6 +47,35 @@ const VERDICT_VARIANT: Record<DealVerdict, "default" | "secondary" | "destructiv
 const PAGE_SIZE = 24;
 
 type SortKey = "spread" | "str_revenue" | "rent" | "days_on_market";
+
+function EnrichButton({ resultId }: { resultId: string }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  if (done) return <span className="text-xs text-green-500">✓ Enriched</span>;
+
+  return (
+    <div>
+      <Button
+        size="sm"
+        variant="outline"
+        className="text-xs h-7"
+        disabled={pending}
+        onClick={() => {
+          startTransition(async () => {
+            const res = await enrichResult(resultId);
+            if (res.error) setError(res.error);
+            else setDone(true);
+          });
+        }}
+      >
+        {pending ? "Calculating..." : "Calculate STR"}
+      </Button>
+      {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+    </div>
+  );
+}
 
 export function ResultsView({ rows }: { rows: ResultView[] }) {
   const [minPrice, setMinPrice] = useState("");
@@ -256,6 +286,10 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
                   <p className="rounded bg-secondary px-2 py-1 text-xs text-muted-foreground">
                     STR note: {r.legality_note}
                   </p>
+                )}
+
+                {r.str_monthly_revenue == null && r.city && (
+                  <EnrichButton resultId={r.id} />
                 )}
 
                 {r.detail_url ? (
