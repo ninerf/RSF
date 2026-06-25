@@ -53,7 +53,7 @@ export function NewSearchForm({
   const [selectedStates, setSelectedStates] = useState<StateCode[]>(
     US_STATES.map((s) => s.code),
   );
-  const [maxPerState, setMaxPerState] = useState(200);
+  const [maxPerState, setMaxPerState] = useState("");
   const [minBeds, setMinBeds] = useState("");
   const [maxRent, setMaxRent] = useState("");
   const [ownerOnly, setOwnerOnly] = useState(true);
@@ -110,7 +110,8 @@ export function NewSearchForm({
     return () => { active = false; clearTimeout(t); };
   }, [startedId, router]);
 
-  const stateEstCost = selectedStates.length * maxPerState * APPROX_COST_PER_RESULT;
+  const maxPerStateNum = Number(maxPerState) || 200;
+  const stateEstCost = selectedStates.length * maxPerStateNum * APPROX_COST_PER_RESULT;
   const urlEstCost = maxItems * APPROX_COST_PER_RESULT;
 
   const activeState = mode === "states" ? stateState : urlState;
@@ -142,7 +143,7 @@ export function NewSearchForm({
         <>
           <form ref={stateFormRef} action={stateAction} className="space-y-4">
             <input type="hidden" name="states" value={JSON.stringify(selectedStates)} />
-            <input type="hidden" name="maxPerState" value={maxPerState} />
+            <input type="hidden" name="maxPerState" value={maxPerState || "200"} />
             <input type="hidden" name="minBeds" value={minBeds} />
             <input type="hidden" name="maxRent" value={maxRent} />
             <input type="hidden" name="ownerOnly" value={ownerOnly ? "1" : ""} />
@@ -157,14 +158,15 @@ export function NewSearchForm({
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1">
-                <Label htmlFor="maxPerState">Max results per state</Label>
+                <Label htmlFor="maxPerState">Max results (total)</Label>
                 <Input
                   id="maxPerState"
                   type="number"
                   min={1}
-                  max={2000}
+                  max={10000}
+                  placeholder="200"
                   value={maxPerState}
-                  onChange={(e) => setMaxPerState(Number(e.target.value))}
+                  onChange={(e) => setMaxPerState(e.target.value)}
                 />
               </div>
               <div className="space-y-1">
@@ -245,7 +247,7 @@ export function NewSearchForm({
                 <DialogTitle>Confirm state search</DialogTitle>
                 <DialogDescription>
                   Searching {selectedStates.length} states · up to{" "}
-                  {selectedStates.length * maxPerState} results · Est. max cost:{" "}
+                  {maxPerStateNum} total results · Est. max cost:{" "}
                   {formatUSD(stateEstCost)}
                 </DialogDescription>
               </DialogHeader>

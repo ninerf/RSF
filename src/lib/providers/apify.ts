@@ -21,13 +21,17 @@ export const apifyProvider: Provider = {
     maxItems: number;
   }): Promise<ProviderRunHandle> {
     const client = new ApifyClient({ token });
-    // maxItems is a platform-level run option that caps charged dataset items
-    // for pay-per-result actors (the zillow-scraper input schema has no
-    // in-input limit field — confirmed from the live build schema).
-    const run = await client
-      .actor(config.actor_id)
-      .start(input, { maxItems });
-    return { runId: run.id };
+    try {
+      const run = await client
+        .actor(config.actor_id)
+        .start(input, { maxItems });
+      return { runId: run.id };
+    } catch (err: any) {
+      if (err?.statusCode === 402 || err?.statusCode === 403) {
+        throw new Error("Apify monthly usage limit exceeded. Wait for reset or upgrade your plan at console.apify.com/billing");
+      }
+      throw err;
+    }
   },
 
   async poll({
