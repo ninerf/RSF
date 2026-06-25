@@ -69,3 +69,9 @@ export async function enrichResult(resultId: string): Promise<{ error?: string }
   revalidatePath("/results");
   return {};
 }
+
+export async function toggleArchive(resultId: string, archived: boolean): Promise<void> {
+  await requireRunner();
+  const admin = createAdminClient();
+  await admin.from("results").update({ archived }).eq("id", resultId);
+}

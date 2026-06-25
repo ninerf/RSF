@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { formatUSD, formatNum, formatPct } from "@/lib/format";
+import { toggleArchive } from "./actions";
 import type { DealVerdict } from "@/lib/types";
 
 export interface ResultView {
@@ -99,6 +100,7 @@ function EnrichButton({ resultId }: { resultId: string }) {
 }
 
 export function ResultsView({ rows }: { rows: ResultView[] }) {
+  const router = useRouter();
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [beds, setBeds] = useState("");
@@ -314,10 +316,27 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
                 )}
 
                 {r.detail_url ? (
-                  <Link href={r.detail_url} target="_blank" rel="noopener noreferrer" className="inline-block pt-1 text-sm text-primary underline-offset-4 hover:underline">
-                    {r.contact_phone || r.contact_email ? "View listing ↗" : "View listing for contact info ↗"}
-                  </Link>
-                ) : null}
+                  <div className="flex items-center justify-between pt-1">
+                    <Link href={r.detail_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary underline-offset-4 hover:underline">
+                      {r.contact_phone || r.contact_email ? "View listing ↗" : "View listing for contact info ↗"}
+                    </Link>
+                    <button
+                      className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-secondary"
+                      title="Archive"
+                      onClick={async () => { await toggleArchive(r.id, true); router.refresh(); }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-secondary mt-1"
+                    title="Archive"
+                    onClick={async () => { await toggleArchive(r.id, true); router.refresh(); }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+                  </button>
+                )}
               </CardContent>
             </Card>
           ))}

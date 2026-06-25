@@ -146,6 +146,7 @@ export async function startStateSearch(params: {
     maxPerState,
     minBeds,
     maxRent,
+    ownerOnly,
   });
 
   return {
@@ -166,8 +167,9 @@ async function startSingleStateRun(params: {
   maxPerState: number;
   minBeds?: number;
   maxRent?: number;
+  ownerOnly?: boolean;
 }) {
-  const { searchId, stateCode, config, token, credential, maxPerState, minBeds, maxRent } = params;
+  const { searchId, stateCode, config, token, credential, maxPerState, minBeds, maxRent, ownerOnly } = params;
   const admin = createAdminClient();
 
   const cities = getCitiesForState(stateCode);
@@ -185,6 +187,7 @@ async function startSingleStateRun(params: {
     url: buildZillowCityUrl(city, {
       minBeds: minBeds || undefined,
       maxPrice: maxRent || undefined,
+      ownerOnly: ownerOnly || undefined,
     }),
   }));
 
@@ -594,6 +597,7 @@ async function advanceToNextState(search: Search) {
     maxPerState?: number;
     minBeds?: number;
     maxRent?: number;
+    ownerOnly?: boolean;
   };
 
   await startSingleStateRun({
@@ -605,6 +609,7 @@ async function advanceToNextState(search: Search) {
     maxPerState: inputParams.maxPerState ?? 200,
     minBeds: inputParams.minBeds,
     maxRent: inputParams.maxRent,
+    ownerOnly: inputParams.ownerOnly,
   });
 }
 

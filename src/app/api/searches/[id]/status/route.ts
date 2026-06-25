@@ -6,7 +6,7 @@ import { pollSearch } from "@/lib/search-engine";
 // finalized row (results are upserted + usage recorded inside pollSearch).
 export async function GET(
   _req: NextRequest,
-  ctx: RouteContext<"/api/searches/[id]/status">,
+  ctx: { params: Promise<{ id: string }> },
 ) {
   const profile = await requireProfile();
   if (!profile) {

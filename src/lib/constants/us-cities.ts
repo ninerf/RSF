@@ -160,7 +160,7 @@ export function getCitiesForState(stateCode: string): CityEntry[] {
 /** Build a Zillow rental search URL for a city with proper searchQueryState */
 export function buildZillowCityUrl(
   city: CityEntry,
-  opts?: { minBeds?: number; maxPrice?: number },
+  opts?: { minBeds?: number; maxPrice?: number; ownerOnly?: boolean },
 ): string {
   const filterState: Record<string, unknown> = {
     fr: { value: true },     // for rent
@@ -173,6 +173,7 @@ export function buildZillowCityUrl(
   };
   if (opts?.minBeds) filterState.beds = { min: opts.minBeds };
   if (opts?.maxPrice) filterState.mp = { max: opts.maxPrice };
+  if (opts?.ownerOnly) filterState.keywords = { value: "FRBO" };
 
   const searchQueryState = {
     mapBounds: {

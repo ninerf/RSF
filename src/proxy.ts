@@ -50,7 +50,7 @@ export async function proxy(request: NextRequest) {
 
   if (user && pathname === "/login") {
     const dashUrl = request.nextUrl.clone();
-    dashUrl.pathname = "/dashboard";
+    dashUrl.pathname = "/searches";
     return NextResponse.redirect(dashUrl);
   }
 

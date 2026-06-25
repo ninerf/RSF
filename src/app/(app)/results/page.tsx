@@ -21,6 +21,7 @@ export default async function ResultsPage() {
       supabase
         .from("results")
         .select("*")
+        .eq("archived", false)
         .order("created_at", { ascending: false })
         .limit(2000),
       supabase.from("result_enrichment").select("*"),
