@@ -238,3 +238,39 @@ export async function enrichSearchAction(
     success: `Enriched ${result.enriched} listings (${result.cacheHits} area cache hits).`,
   };
 }
+
+// Cancel a running search — keeps successful sub-runs, skips pending ones.
+export async function cancelSearch(formData: FormData): Promise<void> {
+  await requireRunner();
+  const searchId = String(formData.get("search_id") ?? "");
+  if (!searchId) return;
+
+  const admin = createAdminClient();
+
+  // Mark pending sub-runs as skipped (keep succeeded ones intact)
+  await admin
+    .from("search_state_runs")
+    .update({ status: "skipped", finished_at: new Date().toISOString() })
+    .eq("search_id", searchId)
+    .in("status", ["pending", "running"]);
+
+  // Count what succeeded
+  const { data: runs } = await admin
+    .from("search_state_runs")
+    .select("result_count")
+    .eq("search_id", searchId)
+    .eq("status", "succeeded");
+
+  const totalResults = (runs ?? []).reduce((s, r: { result_count: number }) => s + r.result_count, 0);
+
+  await admin
+    .from("searches")
+    .update({
+      status: "aborted",
+      result_count: totalResults,
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", searchId);
+
+  revalidatePath("/searches");
+}

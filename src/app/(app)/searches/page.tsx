@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/page-header";
+import { revalidatePath } from "next/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -21,7 +22,7 @@ import {
   type CredentialOption,
 } from "./new-search-form";
 import { EnrichForm } from "./enrich-form";
-import { rerunSearch } from "./actions";
+import { rerunSearch, cancelSearch } from "./actions";
 
 const STATUS_VARIANT: Record<
   string,
@@ -106,7 +107,11 @@ export default async function SearchesPage() {
       <PageHeader
         title="Searches"
         description="Run scraper jobs and enrich results with STR revenue."
-      />
+      >
+        <form action={async () => { "use server"; revalidatePath("/searches"); }}>
+          <Button type="submit" variant="outline" size="sm">Refresh</Button>
+        </form>
+      </PageHeader>
 
       {canRun && configOptions.length > 0 && (
         <Card>
@@ -184,6 +189,14 @@ export default async function SearchesPage() {
                               searchId={s.id}
                               defaultProvider={strProvider}
                             />
+                          )}
+                          {(s.status === "running" || s.status === "pending") && (
+                            <form action={cancelSearch}>
+                              <input type="hidden" name="search_id" value={s.id} />
+                              <Button type="submit" size="sm" variant="destructive">
+                                Cancel
+                              </Button>
+                            </form>
                           )}
                           <form action={rerunSearch}>
                             <input

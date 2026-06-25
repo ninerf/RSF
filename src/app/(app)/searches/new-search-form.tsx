@@ -56,7 +56,7 @@ export function NewSearchForm({
   const [maxPerState, setMaxPerState] = useState(200);
   const [minBeds, setMinBeds] = useState("");
   const [maxRent, setMaxRent] = useState("");
-  const [ownerOnly, setOwnerOnly] = useState(false);
+  const [ownerOnly, setOwnerOnly] = useState(true);
   const [skipRecent, setSkipRecent] = useState(true);
   const [stateConfirmOpen, setStateConfirmOpen] = useState(false);
 
