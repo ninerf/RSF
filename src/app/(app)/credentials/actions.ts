@@ -98,3 +98,22 @@ export async function deleteCredential(formData: FormData): Promise<void> {
 
   revalidatePath("/credentials");
 }
+
+export async function updateCredential(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("credential_id") ?? "");
+  if (!id) return;
+
+  const label = String(formData.get("label") ?? "").trim();
+  const rawLimit = formData.get("monthly_result_limit");
+  const monthly_result_limit =
+    rawLimit && String(rawLimit).trim() !== "" ? Number(rawLimit) : null;
+
+  const admin = createAdminClient();
+  await admin
+    .from("api_credentials")
+    .update({ label, monthly_result_limit })
+    .eq("id", id);
+
+  revalidatePath("/credentials");
+}

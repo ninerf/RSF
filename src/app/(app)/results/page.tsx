@@ -21,7 +21,6 @@ export default async function ResultsPage() {
       supabase
         .from("results")
         .select("*")
-        .eq("archived", false)
         .order("created_at", { ascending: false })
         .limit(2000),
       supabase.from("result_enrichment").select("*"),
@@ -67,6 +66,7 @@ export default async function ResultsPage() {
       arbitrage_spread: e?.arbitrage_spread ?? null,
       deal_verdict: e?.deal_verdict ?? null,
       legality_note: note,
+      archived: (r as any).archived ?? false,
     };
   });
 

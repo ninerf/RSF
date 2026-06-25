@@ -37,6 +37,7 @@ export interface ResultView {
   arbitrage_spread: number | null;
   deal_verdict: DealVerdict | null;
   legality_note: string | null;
+  archived?: boolean;
 }
 
 const VERDICT_VARIANT: Record<DealVerdict, "default" | "secondary" | "destructive"> = {
@@ -130,6 +131,7 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
 
   const filtered = useMemo(() => {
     const out = rows.filter((r) => {
+      if (r.archived) return false;
       if (minPrice && (r.price ?? 0) < Number(minPrice)) return false;
       if (maxPrice && (r.price ?? Infinity) > Number(maxPrice)) return false;
       if (beds && (r.beds ?? 0) < Number(beds)) return false;

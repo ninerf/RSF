@@ -19,7 +19,8 @@ import { requireAdmin } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { ApiCredential } from "@/lib/types";
 import { CreateCredentialForm } from "./create-credential-form";
-import { deleteCredential } from "./actions";
+import { deleteCredential, updateCredential } from "./actions";
+import { Input } from "@/components/ui/input";
 
 export default async function CredentialsPage() {
   await requireAdmin();
@@ -80,13 +81,20 @@ export default async function CredentialsPage() {
                 creds.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.provider}</TableCell>
-                    <TableCell>{c.label}</TableCell>
+                    <TableCell>
+                      <form action={updateCredential} className="flex items-center gap-1">
+                        <input type="hidden" name="credential_id" value={c.id} />
+                        <Input name="label" defaultValue={c.label} className="h-7 w-32 text-xs" />
+                        <Input name="monthly_result_limit" defaultValue={c.monthly_result_limit ?? ""} placeholder="∞" className="h-7 w-16 text-xs" type="number" />
+                        <Button type="submit" size="sm" variant="ghost" className="h-7 text-xs">Save</Button>
+                      </form>
+                    </TableCell>
                     <TableCell>
                       <Badge variant={c.is_paid ? "default" : "secondary"}>
                         {c.is_paid ? "paid" : "free"}
                       </Badge>
                     </TableCell>
-                    <TableCell>{c.monthly_result_limit ?? "—"}</TableCell>
+                    <TableCell>{c.monthly_result_limit ?? "∞"}</TableCell>
                     <TableCell>{c.results_used}</TableCell>
                     <TableCell className="text-right">
                       <form action={deleteCredential} className="inline">

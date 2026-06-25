@@ -186,7 +186,7 @@ export default async function SearchesPage() {
                     {canRun && (
                       <TableCell>
                         <div className="flex items-center justify-end gap-3">
-                          {s.status === "succeeded" && (
+                          {(s.status === "succeeded" || s.status === "aborted") && s.result_count > 0 && (
                             <EnrichForm
                               searchId={s.id}
                               defaultProvider={strProvider}
