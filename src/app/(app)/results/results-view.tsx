@@ -102,6 +102,7 @@ function EnrichButton({ resultId }: { resultId: string }) {
 
 export function ResultsView({ rows }: { rows: ResultView[] }) {
   const router = useRouter();
+  const [showArchived, setShowArchived] = useState(false);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [beds, setBeds] = useState("");
@@ -131,7 +132,7 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
 
   const filtered = useMemo(() => {
     const out = rows.filter((r) => {
-      if (r.archived) return false;
+      if (showArchived ? !r.archived : r.archived) return false;
       if (minPrice && (r.price ?? 0) < Number(minPrice)) return false;
       if (maxPrice && (r.price ?? Infinity) > Number(maxPrice)) return false;
       if (beds && (r.beds ?? 0) < Number(beds)) return false;
@@ -159,7 +160,7 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
     });
 
     return out;
-  }, [rows, minPrice, maxPrice, beds, baths, city, stateFilter, listingType, verdict, ownerType, sort]);
+  }, [rows, showArchived, minPrice, maxPrice, beds, baths, city, stateFilter, listingType, verdict, ownerType, sort]);
 
   const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -236,9 +237,19 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
         </CardContent>
       </Card>
 
-      <p className="text-sm text-muted-foreground">
-        {filtered.length} {filtered.length === 1 ? "result" : "results"}
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          {filtered.length} {filtered.length === 1 ? "result" : "results"}
+          {showArchived && " (archived)"}
+        </p>
+        <Button
+          variant={showArchived ? "default" : "outline"}
+          size="sm"
+          onClick={() => { setShowArchived(!showArchived); resetPage(); }}
+        >
+          {showArchived ? "Show Active" : "Show Archived"}
+        </Button>
+      </div>
 
       {pageRows.length === 0 ? (
         <Card>
@@ -324,8 +335,8 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
                     </Link>
                     <button
                       className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-secondary"
-                      title="Archive"
-                      onClick={async () => { await toggleArchive(r.id, true); router.refresh(); }}
+                      title={showArchived ? "Unarchive" : "Archive"}
+                      onClick={async () => { await toggleArchive(r.id, !showArchived); router.refresh(); }}
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
                     </button>
@@ -333,8 +344,8 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
                 ) : (
                   <button
                     className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-secondary mt-1"
-                    title="Archive"
-                    onClick={async () => { await toggleArchive(r.id, true); router.refresh(); }}
+                    title={showArchived ? "Unarchive" : "Archive"}
+                    onClick={async () => { await toggleArchive(r.id, !showArchived); router.refresh(); }}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
                   </button>
