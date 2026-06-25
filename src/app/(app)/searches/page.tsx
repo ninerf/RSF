@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -165,7 +166,9 @@ export default async function SearchesPage() {
                 searches.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">
-                      {s.name ?? "Untitled"}
+                      <Link href={`/searches/${s.id}`} className="hover:underline">
+                        {s.name ?? "Untitled"}
+                      </Link>
                     </TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[s.status] ?? "outline"}>

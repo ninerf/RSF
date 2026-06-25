@@ -8,6 +8,7 @@ import { buildInput } from "@/lib/providers/input-builder";
 import { mapResult } from "@/lib/providers/result-mapper";
 import { getCitiesForState, buildZillowCityUrl } from "@/lib/constants/us-cities";
 import { getSettings } from "@/lib/budget";
+import { logSearch } from "@/lib/search-logger";
 import type { ActorConfig, Search } from "@/lib/types";
 
 export interface StartSearchResult {
@@ -132,6 +133,8 @@ export async function startStateSearch(params: {
 
   await admin.from("search_state_runs").insert([...subRows, ...skippedRows]);
 
+  await logSearch(search.id, "info", `Search started — ${statesToRun.length} states queued${skippedStates.length ? `, ${skippedStates.length} skipped (recent)` : ""}`);
+
   // Start the first state run (the rest will be picked up by polling).
   const firstState = statesToRun[0];
   await startSingleStateRun({
@@ -210,11 +213,13 @@ async function startSingleStateRun(params: {
     .eq("search_id", searchId)
     .eq("state_code", stateCode);
 
+  const cityNames = cities.map((c) => c.name).join(", ");
+  await logSearch(searchId, "info", `Starting ${stateCode} (${cityNames})`, stateCode);
+
   try {
     const handle = await provider.start({ config, token, input, maxItems: maxPerState });
 
     if (handle.runId === null) {
-      // Synchronous result.
       await finalizeStateRun({
         searchId,
         stateCode,
@@ -228,9 +233,11 @@ async function startSingleStateRun(params: {
         .update({ apify_run_id: handle.runId })
         .eq("search_id", searchId)
         .eq("state_code", stateCode);
+      await logSearch(searchId, "info", `Apify run ${handle.runId} started`, stateCode, { runId: handle.runId });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Run failed.";
+    await logSearch(searchId, "error", `${stateCode} failed: ${message}`, stateCode);
     await admin
       .from("search_state_runs")
       .update({ status: "failed", error: message, finished_at: new Date().toISOString() })
@@ -274,6 +281,8 @@ async function finalizeStateRun(params: {
     })
     .eq("search_id", searchId)
     .eq("state_code", stateCode);
+
+  await logSearch(searchId, "info", `${stateCode} complete — ${rows.length} results (${newCount} new)`, stateCode, { resultCount: rows.length, newCount });
 
   if (rows.length > 0) {
     await recordUsage({ credentialId, searchId, resultsCharged: rows.length });
@@ -547,6 +556,9 @@ async function advanceToNextState(search: Search) {
         finished_at: new Date().toISOString(),
       })
       .eq("id", search.id);
+
+    const succeeded = runs.filter((r) => r.status === "succeeded").length;
+    await logSearch(search.id, "info", `Search complete — ${totalResults} results across ${succeeded} states`);
     return;
   }
 
