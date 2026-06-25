@@ -15,6 +15,13 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Zillow Finder",
   description: "Internal real-estate search tool",
+  manifest: "/manifest.json",
+  themeColor: "#09090b",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Zillow Finder",
+  },
   icons: {
     icon: "/favicon.png",
     apple: "/apple-touch-icon.png",
@@ -34,6 +41,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-background text-foreground">
         {children}
+        <script dangerouslySetInnerHTML={{ __html: `if("serviceWorker"in navigator)navigator.serviceWorker.register("/sw.js")` }} />
       </body>
     </html>
   );
