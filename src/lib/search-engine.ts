@@ -182,20 +182,19 @@ async function startSingleStateRun(params: {
     return;
   }
 
-  // Build search URLs for all cities in this state
-  const searchUrls = cities.map((city) => ({
-    url: buildZillowCityUrl(city, {
-      minBeds: minBeds || undefined,
-      maxPrice: maxRent || undefined,
-      ownerOnly: ownerOnly || undefined,
-    }),
-  }));
+  // Use ZIP code scraper (more reliable than URL-based scraper)
+  // Each city contributes its ZIP codes for rental search
+  const zipCodes = cities.map((c) => c.zip).filter(Boolean);
 
-  // Build the scraper input directly (multiple city URLs in one run)
-  const input = {
-    searchUrls,
-    extractionMethod: "PAGINATION_WITH_ZOOM_IN",
+  const input: Record<string, unknown> = {
+    zipCodes,
+    forSaleByAgent: false,
+    forSaleByOwner: false,
+    forRent: true,
+    sold: false,
   };
+  if (minBeds) input.bedsMin = minBeds;
+  if (maxRent) input.priceMax = maxRent;
 
   const provider = resolveProvider(config.provider);
 
@@ -220,7 +219,7 @@ async function startSingleStateRun(params: {
   await logSearch(searchId, "info", `Starting ${stateCode} (${cityNames})`, stateCode);
 
   try {
-    const handle = await provider.start({ config, token, input, maxItems: maxPerState });
+    const handle = await provider.start({ config: { ...config, actor_id: "maxcopell/zillow-zip-search" }, token, input, maxItems: maxPerState });
 
     if (handle.runId === null) {
       await finalizeStateRun({

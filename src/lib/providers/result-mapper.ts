@@ -128,16 +128,15 @@ export function mapResult(
 
   // ─── Strict owner detection ───
   // Reject obvious property management / multifamily building listings
-  const isBuilding = get(item, "isBuilding") === true;
   const buildingName = toStr(get(item, "buildingName"));
   const marketingTreatments = get(item, "marketingTreatments") as string[] | undefined;
-  const hasPaidMultifamily = Array.isArray(marketingTreatments) &&
-    marketingTreatments.some((t) => t.includes("multifamily") || t.includes("Multifamily") || t === "paid");
+  const hasMultifamily = Array.isArray(marketingTreatments) &&
+    marketingTreatments.some((t) => t.toLowerCase().includes("multifamily"));
 
-  if (isBuilding || buildingName || hasPaidMultifamily) {
+  if (buildingName || hasMultifamily) {
     row.owner_type = "management";
   } else {
-    row.owner_type = classifyOwnerType(row.owner_name);
+    row.owner_type = classifyOwnerType(row.owner_name) ?? "owner";
   }
 
   return row;
