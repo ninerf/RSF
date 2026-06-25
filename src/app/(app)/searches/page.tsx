@@ -108,11 +108,7 @@ export default async function SearchesPage() {
       <PageHeader
         title="Searches"
         description="Run scraper jobs and enrich results with STR revenue."
-      >
-        <form action={async () => { "use server"; revalidatePath("/searches"); }}>
-          <Button type="submit" variant="outline" size="sm">Refresh</Button>
-        </form>
-      </PageHeader>
+      />
 
       {canRun && configOptions.length > 0 && (
         <Card>
@@ -138,8 +134,11 @@ export default async function SearchesPage() {
       )}
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Saved searches</CardTitle>
+          <form action={async () => { "use server"; revalidatePath("/searches"); }}>
+            <Button type="submit" variant="outline" size="sm">Refresh</Button>
+          </form>
         </CardHeader>
         <CardContent>
           <Table>

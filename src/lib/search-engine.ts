@@ -559,6 +559,21 @@ async function advanceToNextState(search: Search) {
 
     const succeeded = runs.filter((r) => r.status === "succeeded").length;
     await logSearch(search.id, "info", `Search complete — ${totalResults} results across ${succeeded} states`);
+
+    // Auto-enrich with STR revenue data
+    try {
+      const { enrichSearch } = await import("@/lib/str/enrich");
+      await logSearch(search.id, "info", "Starting STR revenue enrichment...");
+      const enrichResult = await enrichSearch({ searchId: search.id, provider: "apify_airbnb" });
+      if (enrichResult.ok) {
+        await logSearch(search.id, "info", `Enrichment complete — ${enrichResult.enriched} listings enriched (${enrichResult.cacheHits} cache hits)`);
+      } else {
+        await logSearch(search.id, "warn", `Enrichment skipped: ${enrichResult.error ?? "unknown"}`);
+      }
+    } catch {
+      await logSearch(search.id, "warn", "Auto-enrichment failed (can retry manually)");
+    }
+
     return;
   }
 

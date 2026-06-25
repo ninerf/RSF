@@ -10,7 +10,6 @@ import type { Role } from "@/lib/types";
 type NavItem = { href: string; label: string; adminOnly?: boolean };
 
 const NAV: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/searches", label: "Searches" },
   { href: "/results", label: "Results" },
   { href: "/guide", label: "Guide" },
@@ -33,7 +32,7 @@ export function TopNav({
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-6 px-4">
-        <Link href="/dashboard" className="shrink-0">
+        <Link href="/searches" className="shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo.webp" alt="Zillow Finder" className="h-8" />
         </Link>
