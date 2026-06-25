@@ -125,7 +125,20 @@ export function mapResult(
   row.broker_name = brokerName || null;
   row.contact_phone = brokerPhone || attributionPhone || null;
   row.contact_email = toStr(get(item, "attributionInfo.agentEmail")) || null;
-  row.owner_type = classifyOwnerType(row.owner_name);
+
+  // ─── Strict owner detection ───
+  // Reject obvious property management / multifamily building listings
+  const isBuilding = get(item, "isBuilding") === true;
+  const buildingName = toStr(get(item, "buildingName"));
+  const marketingTreatments = get(item, "marketingTreatments") as string[] | undefined;
+  const hasPaidMultifamily = Array.isArray(marketingTreatments) &&
+    marketingTreatments.some((t) => t.includes("multifamily") || t.includes("Multifamily") || t === "paid");
+
+  if (isBuilding || buildingName || hasPaidMultifamily) {
+    row.owner_type = "management";
+  } else {
+    row.owner_type = classifyOwnerType(row.owner_name);
+  }
 
   return row;
 }

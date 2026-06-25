@@ -229,6 +229,7 @@ async function startSingleStateRun(params: {
         config,
         items: handle.items ?? [],
         credentialId: credential.id,
+        ownerOnly,
       });
     } else {
       await admin
@@ -256,14 +257,20 @@ async function finalizeStateRun(params: {
   config: ActorConfig;
   items: Record<string, unknown>[];
   credentialId: string;
+  ownerOnly?: boolean;
 }) {
-  const { searchId, stateCode, config, items, credentialId } = params;
+  const { searchId, stateCode, config, items, credentialId, ownerOnly } = params;
   const admin = createAdminClient();
 
-  const rows = items
+  let rows = items
     .map((item) => mapResult(item, config))
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .map((r) => ({ ...r, search_id: searchId }));
+
+  // Strict owner filtering — drop management listings before saving
+  if (ownerOnly) {
+    rows = rows.filter((r) => (r as any).owner_type !== "management");
+  }
 
   let newCount = 0;
   if (rows.length > 0) {
@@ -520,6 +527,7 @@ async function pollStateSearch(search: Search): Promise<Search> {
       config,
       items: poll.items ?? [],
       credentialId: search.credential_id!,
+      ownerOnly: (search.input_params as any)?.ownerOnly,
     });
   }
 

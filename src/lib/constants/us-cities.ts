@@ -173,7 +173,13 @@ export function buildZillowCityUrl(
   };
   if (opts?.minBeds) filterState.beds = { min: opts.minBeds };
   if (opts?.maxPrice) filterState.mp = { max: opts.maxPrice };
-  if (opts?.ownerOnly) filterState.keywords = { value: "FRBO" };
+  if (opts?.ownerOnly) {
+    // FRBO keyword + exclude apartments/condos (mostly management companies)
+    filterState.keywords = { value: "FRBO" };
+    filterState.apco = { value: false };  // exclude apartments/condos
+    filterState.apa = { value: false };   // exclude apartments
+    filterState.con = { value: false };   // exclude condos
+  }
 
   const searchQueryState = {
     mapBounds: {
