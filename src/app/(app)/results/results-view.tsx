@@ -100,6 +100,73 @@ function EnrichButton({ resultId }: { resultId: string }) {
   );
 }
 
+
+function BatchEnrichButton() {
+  const [state, setState] = useState<"idle" | "running" | "done">("idle");
+  const [progress, setProgress] = useState({ total: 0, done: 0, pending: 0 });
+  const router = useRouter();
+
+  const run = async () => {
+    setState("running");
+    // Get batch info
+    const infoRes = await fetch("/api/results/enrich-batch");
+    const info = await infoRes.json();
+    setProgress({ total: info.total, done: info.enriched, pending: info.pending });
+
+    if (!info.nextId) { setState("done"); return; }
+
+    // Process one at a time
+    let nextId = info.nextId;
+    let enrichedCount = info.enriched;
+    while (nextId && state !== "idle") {
+      // Start enrichment
+      const startRes = await fetch("/api/results/enrich", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultId: nextId }),
+      });
+      const startData = await startRes.json();
+
+      if (startData.status === "done") {
+        enrichedCount++;
+        setProgress((p) => ({ ...p, done: enrichedCount, pending: p.pending - 1 }));
+      } else if (startData.runId) {
+        // Poll until done
+        let pollStatus = "running";
+        while (pollStatus === "running") {
+          await new Promise((r) => setTimeout(r, 5000));
+          const pollRes = await fetch(`/api/results/enrich?resultId=${nextId}&runId=${startData.runId}`);
+          const pollData = await pollRes.json();
+          pollStatus = pollData.status;
+        }
+        enrichedCount++;
+        setProgress((p) => ({ ...p, done: enrichedCount, pending: p.pending - 1 }));
+      }
+
+      // Get next
+      const nextRes = await fetch("/api/results/enrich-batch");
+      const nextInfo = await nextRes.json();
+      nextId = nextInfo.nextId;
+      if (!nextId) break;
+    }
+
+    setState("done");
+    router.refresh();
+  };
+
+  if (state === "done") return <span className="text-xs text-green-500">✓ All enriched</span>;
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button size="sm" variant="outline" disabled={state === "running"} onClick={run}>
+        {state === "running" ? `Enriching ${progress.done}/${progress.total}...` : "Enrich All STR"}
+      </Button>
+      {state === "running" && (
+        <span className="text-xs text-muted-foreground">{progress.pending} remaining</span>
+      )}
+    </div>
+  );
+}
+
 export function ResultsView({ rows }: { rows: ResultView[] }) {
   const router = useRouter();
   const [showArchived, setShowArchived] = useState(false);
@@ -242,13 +309,16 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
           {filtered.length} {filtered.length === 1 ? "result" : "results"}
           {showArchived && " (archived)"}
         </p>
-        <Button
-          variant={showArchived ? "default" : "outline"}
-          size="sm"
-          onClick={() => { setShowArchived(!showArchived); resetPage(); }}
-        >
+        <div className="flex items-center gap-2">
+          <BatchEnrichButton />
+          <Button
+            variant={showArchived ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setShowArchived(!showArchived); resetPage(); }}
+          >
           {showArchived ? "Show Active" : "Show Archived"}
         </Button>
+        </div>
       </div>
 
       {pageRows.length === 0 ? (

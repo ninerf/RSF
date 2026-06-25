@@ -195,6 +195,7 @@ async function startSingleStateRun(params: {
   };
   if (minBeds) input.bedsMin = minBeds;
   if (maxRent) input.priceMax = maxRent;
+  if (ownerOnly) input.homeType = ["Houses", "Townhomes"];
 
   const provider = resolveProvider(config.provider);
 

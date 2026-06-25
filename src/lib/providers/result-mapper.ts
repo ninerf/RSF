@@ -132,9 +132,16 @@ export function mapResult(
   const marketingTreatments = get(item, "marketingTreatments") as string[] | undefined;
   const hasMultifamily = Array.isArray(marketingTreatments) &&
     marketingTreatments.some((t) => t.toLowerCase().includes("multifamily"));
+  const statusText = toStr(get(item, "statusText")) ?? "";
+  const isHouse = statusText.toLowerCase().includes("house") || statusText.toLowerCase().includes("townhouse");
+  const isApartmentComplex = statusText.toLowerCase().includes("apartment") && !statusText.toLowerCase().includes("for rent");
 
-  if (buildingName || hasMultifamily) {
+  // Strict: reject if has buildingName, multifamily, or is a named complex
+  if (buildingName || hasMultifamily || isApartmentComplex) {
     row.owner_type = "management";
+  } else if (isHouse) {
+    // Houses are almost always owner/small investor
+    row.owner_type = "owner";
   } else {
     row.owner_type = classifyOwnerType(row.owner_name) ?? "owner";
   }

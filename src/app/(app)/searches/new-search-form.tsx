@@ -89,6 +89,7 @@ export function NewSearchForm({
   // Polling for state search
   const startedId = stateState?.searchId || urlState?.searchId;
   const [status, setStatus] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
 
   useEffect(() => {
     if (!startedId) return;
@@ -99,6 +100,15 @@ export function NewSearchForm({
         const data = await res.json();
         if (!active) return;
         setStatus(data.status);
+        if (data.progress) {
+          const p = data.progress;
+          const parts = [];
+          if (p.current_state) parts.push(`searching ${p.current_state}`);
+          parts.push(`${p.completed}/${p.total} states done`);
+          if (p.results_so_far > 0) parts.push(`${p.results_so_far} results`);
+          if (p.failed > 0) parts.push(`${p.failed} failed`);
+          setProgress(parts.join(" · "));
+        }
         if (["succeeded", "failed", "aborted", "partial"].includes(data.status)) {
           router.refresh();
           return;
@@ -228,7 +238,7 @@ export function NewSearchForm({
             )}
             {activeState?.success && (
               <p className="text-sm text-green-500">
-                {activeState.success} Status: {status ?? "running"}.
+                {activeState.success} {progress ?? `Status: ${status ?? "starting..."}`}
               </p>
             )}
 
@@ -358,7 +368,7 @@ export function NewSearchForm({
               <p className="text-sm text-green-500">
                 {urlState.success}
                 {urlState.credentialLabel ? ` Using: ${urlState.credentialLabel}.` : ""}
-                {` Status: ${status ?? "running"}.`}
+                {` ${progress ?? `Status: ${status ?? "starting..."}`}`}
               </p>
             )}
 
