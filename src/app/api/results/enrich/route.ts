@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     .eq("beds", beds)
     .maybeSingle();
 
-  if (cached) {
+  if (cached && cached.monthly_revenue != null) {
     const settings = await getSettings();
     const deal = evaluateDeal({ monthlyRent: result.price, strMonthlyRevenue: cached.monthly_revenue }, settings);
     await admin.from("result_enrichment").upsert({
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
   const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
   const adr = avg(adrs), occupancy = avg(occs), monthly_revenue = avg(monthlyRevs), annual_revenue = avg(annualRevs);
 
-  if (monthly_revenue == null) return NextResponse.json({ status: "done", error: "No revenue data" });
+  if (monthly_revenue == null) return NextResponse.json({ status: "done", error: "No revenue data found for this area. Try again later." });
 
   // Save to cache
   const { data: result } = await admin.from("results").select("city, state, beds, price").eq("id", resultId).single();
