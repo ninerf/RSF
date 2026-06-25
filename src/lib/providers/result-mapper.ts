@@ -88,6 +88,33 @@ export function mapResult(
 
   if (!row.external_id) return null;
 
+  // For rentals, zpid can be a coordinate string - use lotId as fallback
+  if (row.external_id && row.external_id.includes("--")) {
+    const lotId = toStr(get(item, "lotId"));
+    if (lotId) row.external_id = lotId;
+  }
+
+  // ─── Rental-specific price extraction ───
+  // Rental listings use units[]/minBaseRent instead of unformattedPrice
+  if (!row.price || (row as Record<string, unknown>).price === null) {
+    const minRent = toNum(get(item, "minBaseRent"));
+    if (minRent) {
+      (row as Record<string, unknown>).price = minRent;
+    } else {
+      // Try units[0].price (e.g. "$2,729+")
+      const units = get(item, "units") as unknown[];
+      if (Array.isArray(units) && units.length > 0) {
+        const unitPrice = toNum((units[0] as Record<string, unknown>)?.price);
+        if (unitPrice) (row as Record<string, unknown>).price = unitPrice;
+        // Also extract beds from units if not already set
+        if (!row.beds) {
+          const unitBeds = toNum((units[0] as Record<string, unknown>)?.beds);
+          if (unitBeds) (row as Record<string, unknown>).beds = unitBeds;
+        }
+      }
+    }
+  }
+
   // Extract owner/contact info from Zillow data.
   const brokerName = toStr(get(item, "brokerName"));
   const brokerPhone = toStr(get(item, "hdpData.homeInfo.brokerPhone"));

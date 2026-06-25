@@ -6,7 +6,7 @@ import { checkBudget, recordUsage } from "@/lib/budget";
 import { resolveProvider } from "@/lib/providers/registry";
 import { buildInput } from "@/lib/providers/input-builder";
 import { mapResult } from "@/lib/providers/result-mapper";
-import { buildZillowStateUrl, STATE_BY_CODE } from "@/lib/constants/us-states";
+import { getCitiesForState, buildZillowCityUrl } from "@/lib/constants/us-cities";
 import { getSettings } from "@/lib/budget";
 import type { ActorConfig, Search } from "@/lib/types";
 
@@ -153,7 +153,7 @@ export async function startStateSearch(params: {
   };
 }
 
-// Start one state sub-run.
+// Start one state sub-run. Searches all major cities in the state.
 async function startSingleStateRun(params: {
   searchId: string;
   stateCode: string;
@@ -167,16 +167,30 @@ async function startSingleStateRun(params: {
   const { searchId, stateCode, config, token, credential, maxPerState, minBeds, maxRent } = params;
   const admin = createAdminClient();
 
-  const stateInfo = STATE_BY_CODE[stateCode as keyof typeof STATE_BY_CODE];
-  if (!stateInfo) return;
+  const cities = getCitiesForState(stateCode);
+  if (cities.length === 0) {
+    await admin
+      .from("search_state_runs")
+      .update({ status: "failed", error: "No cities configured for this state.", finished_at: new Date().toISOString() })
+      .eq("search_id", searchId)
+      .eq("state_code", stateCode);
+    return;
+  }
 
-  const url = buildZillowStateUrl(stateInfo.regionId, {
-    minBeds: minBeds || undefined,
-    maxPrice: maxRent || undefined,
-  });
+  // Build search URLs for all cities in this state
+  const searchUrls = cities.map((city) => ({
+    url: buildZillowCityUrl(city, {
+      minBeds: minBeds || undefined,
+      maxPrice: maxRent || undefined,
+    }),
+  }));
 
-  // Build input as if the user pasted this URL.
-  const input = buildInput(config, { url });
+  // Build the scraper input directly (multiple city URLs in one run)
+  const input = {
+    searchUrls,
+    extractionMethod: "PAGINATION_WITH_ZOOM_IN",
+  };
+
   const provider = resolveProvider(config.provider);
 
   // Budget check per state sub-run.

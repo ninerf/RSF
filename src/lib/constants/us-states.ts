@@ -57,28 +57,3 @@ export type StateCode = (typeof US_STATES)[number]["code"];
 export const STATE_BY_CODE = Object.fromEntries(
   US_STATES.map((s) => [s.code, s]),
 ) as Record<StateCode, (typeof US_STATES)[number]>;
-
-/** Build a Zillow for_rent search URL for a state. */
-export function buildZillowStateUrl(
-  regionId: number,
-  opts?: { minBeds?: number; maxPrice?: number },
-): string {
-  const filterState: Record<string, unknown> = {
-    isForRent: { value: true },
-    isForSaleByAgent: { value: false },
-    isForSaleByOwner: { value: false },
-    isNewConstruction: { value: false },
-    isComingSoon: { value: false },
-    isAuction: { value: false },
-    isForSaleForeclosure: { value: false },
-  };
-  if (opts?.minBeds) filterState.beds = { min: opts.minBeds };
-  if (opts?.maxPrice) filterState.price = { max: opts.maxPrice };
-
-  const searchQueryState = {
-    regionSelection: [{ regionId, regionType: 2 }], // regionType 2 = state
-    filterState,
-  };
-
-  return `https://www.zillow.com/homes/for_rent/?searchQueryState=${encodeURIComponent(JSON.stringify(searchQueryState))}`;
-}
