@@ -49,37 +49,43 @@ const PAGE_SIZE = 24;
 type SortKey = "spread" | "str_revenue" | "rent" | "days_on_market";
 
 function EnrichButton({ resultId }: { resultId: string }) {
-  const [pending, setPending] = useState(false);
+  const [status, setStatus] = useState<"idle" | "starting" | "running" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
   const router = useRouter();
 
-  if (done) return <span className="text-xs text-green-500">✓ Enriched — refresh to see</span>;
+  if (status === "done") return <span className="text-xs text-green-500">✓ Enriched — refresh to see</span>;
+
+  const start = async () => {
+    setStatus("starting");
+    setError(null);
+    try {
+      const res = await fetch("/api/results/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); setStatus("error"); return; }
+      if (data.status === "done") { setStatus("done"); router.refresh(); return; }
+
+      // Poll
+      const runId = data.runId;
+      setStatus("running");
+      const poll = async () => {
+        const r = await fetch(`/api/results/enrich?resultId=${resultId}&runId=${runId}`);
+        const d = await r.json();
+        if (d.status === "running") { setTimeout(poll, 3000); return; }
+        if (d.status === "done" && !d.error) { setStatus("done"); router.refresh(); }
+        else { setError(d.error ?? "Failed"); setStatus("error"); }
+      };
+      setTimeout(poll, 5000);
+    } catch { setError("Network error"); setStatus("error"); }
+  };
 
   return (
     <div>
-      <Button
-        size="sm"
-        variant="outline"
-        className="text-xs h-7"
-        disabled={pending}
-        onClick={async () => {
-          setPending(true);
-          setError(null);
-          try {
-            const res = await fetch("/api/results/enrich", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ resultId }),
-            });
-            const data = await res.json();
-            if (!res.ok) setError(data.error ?? "Failed");
-            else { setDone(true); router.refresh(); }
-          } catch { setError("Network error"); }
-          setPending(false);
-        }}
-      >
-        {pending ? "Calculating..." : "Calculate STR"}
+      <Button size="sm" variant="outline" className="text-xs h-7" disabled={status === "starting" || status === "running"} onClick={start}>
+        {status === "starting" ? "Starting..." : status === "running" ? "Calculating..." : "Calculate STR"}
       </Button>
       {error && <p className="text-xs text-destructive mt-1">{error}</p>}
     </div>
