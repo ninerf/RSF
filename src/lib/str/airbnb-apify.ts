@@ -1,28 +1,22 @@
 import "server-only";
 
-import { ApifyClient } from "apify-client";
 import type { RevenueInput, RevenueResult } from "@/lib/types";
 
-// Uses malikgen/airbnb-revenue-calculator — a proper AirDNA alternative on Apify.
-// $5/1000 results, uses your existing Apify token. Gives real occupancy, ADR,
-// and revenue estimates from Airbnb's forward calendar data.
-const REVENUE_ACTOR_ID = "malikgen/airbnb-revenue-calculator";
+// Uses malikgen/airbnb-revenue-calculator via Apify REST API with sync call.
+// Returns real occupancy, ADR, and revenue from Airbnb's forward calendar.
+const REVENUE_ACTOR_ID = "malikgen~airbnb-revenue-calculator";
 
 export async function getRevenueAirbnbApify(
   input: RevenueInput,
   token: string,
-  options: { maxItems?: number; pollMs?: number; timeoutMs?: number } = {},
+  options: { maxItems?: number } = {},
 ): Promise<RevenueResult> {
   const { city, state, beds } = input;
   if (!city) {
     return { adr: null, occupancy: null, monthly_revenue: null, annual_revenue: null, provider: "apify_airbnb" };
   }
 
-  const maxItems = options.maxItems ?? 20;
-  const pollMs = options.pollMs ?? 5000;
-  const timeoutMs = options.timeoutMs ?? 120000; // revenue calc takes longer
-
-  const client = new ApifyClient({ token });
+  const maxItems = options.maxItems ?? 10;
   const location = state ? `${city}, ${state}` : city;
 
   const actorInput: Record<string, unknown> = {
@@ -32,30 +26,27 @@ export async function getRevenueAirbnbApify(
   };
   if (beds && beds > 0) actorInput.minBedrooms = Math.floor(beds);
 
-  const run = await client.actor(REVENUE_ACTOR_ID).start(actorInput);
+  // Use Apify's run-sync-get-dataset-items endpoint — waits for completion and returns items directly.
+  // Timeout set to 120s on Apify's side (their server holds the connection).
+  const res = await fetch(
+    `https://api.apify.com/v2/acts/${REVENUE_ACTOR_ID}/run-sync-get-dataset-items?token=${token}&timeout=120`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(actorInput),
+    },
+  );
 
-  // Poll until terminal or timeout.
-  const deadline = Date.now() + timeoutMs;
-  let datasetId: string | undefined;
-  while (Date.now() <= deadline) {
-    const r = await client.run(run.id).get();
-    if (!r) break;
-    if (r.status === "SUCCEEDED") { datasetId = r.defaultDatasetId; break; }
-    if (["FAILED", "TIMED-OUT", "ABORTED"].includes(r.status)) break;
-    await new Promise((res) => setTimeout(res, pollMs));
-  }
-
-  if (!datasetId) {
+  if (!res.ok) {
     return { adr: null, occupancy: null, monthly_revenue: null, annual_revenue: null, provider: "apify_airbnb" };
   }
 
-  const { items } = await client.dataset(datasetId).listItems();
+  const items = (await res.json()) as Record<string, unknown>[];
 
   if (!items || items.length === 0) {
     return { adr: null, occupancy: null, monthly_revenue: null, annual_revenue: null, provider: "apify_airbnb" };
   }
 
-  // Aggregate across comps: average the ADR, occupancy (90-day), and revenue.
   type Item = {
     adr?: number;
     occupancyPct?: { d90?: number };
@@ -73,7 +64,7 @@ export async function getRevenueAirbnbApify(
   for (const c of comps) {
     if (c.adr != null) adrs.push(c.adr);
     const occ = c.occupancyUsedPct ?? c.occupancyPct?.d90;
-    if (occ != null) occs.push(occ / 100); // convert from % to decimal
+    if (occ != null) occs.push(occ / 100);
     if (c.estimatedRevenueMonthly != null) monthlyRevs.push(c.estimatedRevenueMonthly);
     if (c.estimatedRevenueAnnual != null) annualRevs.push(c.estimatedRevenueAnnual);
   }

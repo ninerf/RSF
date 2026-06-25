@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { formatUSD, formatNum, formatPct } from "@/lib/format";
-import { enrichResult } from "./actions";
 import type { DealVerdict } from "@/lib/types";
 
 export interface ResultView {
@@ -49,11 +49,12 @@ const PAGE_SIZE = 24;
 type SortKey = "spread" | "str_revenue" | "rent" | "days_on_market";
 
 function EnrichButton({ resultId }: { resultId: string }) {
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const router = useRouter();
 
-  if (done) return <span className="text-xs text-green-500">✓ Enriched</span>;
+  if (done) return <span className="text-xs text-green-500">✓ Enriched — refresh to see</span>;
 
   return (
     <div>
@@ -62,12 +63,20 @@ function EnrichButton({ resultId }: { resultId: string }) {
         variant="outline"
         className="text-xs h-7"
         disabled={pending}
-        onClick={() => {
-          startTransition(async () => {
-            const res = await enrichResult(resultId);
-            if (res.error) setError(res.error);
-            else setDone(true);
-          });
+        onClick={async () => {
+          setPending(true);
+          setError(null);
+          try {
+            const res = await fetch("/api/results/enrich", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ resultId }),
+            });
+            const data = await res.json();
+            if (!res.ok) setError(data.error ?? "Failed");
+            else { setDone(true); router.refresh(); }
+          } catch { setError("Network error"); }
+          setPending(false);
         }}
       >
         {pending ? "Calculating..." : "Calculate STR"}
