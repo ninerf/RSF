@@ -60,7 +60,11 @@ export async function POST(req: NextRequest) {
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(actorInput) },
   );
 
-  if (!startRes.ok) return NextResponse.json({ error: "Failed to start Apify run" }, { status: 500 });
+  if (!startRes.ok) {
+    const errData = await startRes.json().catch(() => ({})) as { error?: { message?: string } };
+    const msg = errData.error?.message ?? "Failed to start Apify run";
+    return NextResponse.json({ error: msg }, { status: startRes.status });
+  }
   const run = (await startRes.json()) as { data: { id: string } };
 
   return NextResponse.json({ status: "running", runId: run.data.id, resultId });

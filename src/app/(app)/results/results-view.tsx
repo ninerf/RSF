@@ -53,7 +53,7 @@ function EnrichButton({ resultId }: { resultId: string }) {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
-  if (status === "done") return <span className="text-xs text-green-500">✓ Enriched — refresh to see</span>;
+  if (status === "done") return <span className="text-xs text-green-500">✓ Enriched</span>;
 
   const start = async () => {
     setStatus("starting");
@@ -68,26 +68,28 @@ function EnrichButton({ resultId }: { resultId: string }) {
       if (!res.ok) { setError(data.error); setStatus("error"); return; }
       if (data.status === "done") { setStatus("done"); router.refresh(); return; }
 
-      // Poll
       const runId = data.runId;
       setStatus("running");
       const poll = async () => {
         const r = await fetch(`/api/results/enrich?resultId=${resultId}&runId=${runId}`);
         const d = await r.json();
-        if (d.status === "running") { setTimeout(poll, 3000); return; }
+        if (d.status === "running") { setTimeout(poll, 4000); return; }
         if (d.status === "done" && !d.error) { setStatus("done"); router.refresh(); }
         else { setError(d.error ?? "Failed"); setStatus("error"); }
       };
-      setTimeout(poll, 5000);
+      setTimeout(poll, 6000);
     } catch { setError("Network error"); setStatus("error"); }
   };
 
   return (
-    <div>
-      <Button size="sm" variant="outline" className="text-xs h-7" disabled={status === "starting" || status === "running"} onClick={start}>
-        {status === "starting" ? "Starting..." : status === "running" ? "Calculating..." : "Calculate STR"}
-      </Button>
-      {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" className="text-xs h-7" disabled={status === "starting" || status === "running"} onClick={start}>
+          {status === "starting" ? "Starting..." : status === "running" ? "Calculating..." : "Calculate STR"}
+        </Button>
+        <span className="text-[10px] text-muted-foreground">via Airbnb comps</span>
+      </div>
+      {error && <p className="text-xs text-destructive">{error.includes("memory") ? "Apify memory full — wait a few minutes and retry" : error}</p>}
     </div>
   );
 }
