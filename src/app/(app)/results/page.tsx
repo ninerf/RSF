@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
-import { requireProfile } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { ResultRow, ResultEnrichment } from "@/lib/types";
 import { ResultsView, type ResultView } from "./results-view";
@@ -12,7 +12,7 @@ interface LegalityNote {
 }
 
 export default async function ResultsPage() {
-  await requireProfile();
+  await requireStaff();
   const supabase = await createClient();
 
   // All authenticated users can read results + enrichment (RLS).
@@ -66,7 +66,10 @@ export default async function ResultsPage() {
       arbitrage_spread: e?.arbitrage_spread ?? null,
       deal_verdict: e?.deal_verdict ?? null,
       legality_note: note,
-      archived: (r as any).archived ?? false,
+      archived: r.archived ?? false,
+      review_status: r.review_status ?? "pending",
+      availability_status: r.availability_status ?? null,
+      str_source: e?.source ?? null,
     };
   });
 

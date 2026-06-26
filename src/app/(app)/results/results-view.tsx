@@ -10,8 +10,14 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { formatUSD, formatNum, formatPct } from "@/lib/format";
-import { toggleArchive } from "./actions";
-import type { DealVerdict } from "@/lib/types";
+import {
+  toggleArchive,
+  approveResult,
+  disapproveResult,
+  updateOwnerInfo,
+  addManualApr,
+} from "./actions";
+import type { DealVerdict, ReviewStatus } from "@/lib/types";
 
 export interface ResultView {
   id: string;
@@ -38,7 +44,18 @@ export interface ResultView {
   deal_verdict: DealVerdict | null;
   legality_note: string | null;
   archived?: boolean;
+  review_status: ReviewStatus;
+  availability_status: string | null;
+  str_source: string | null;
 }
+
+const REVIEW_BADGE: Record<ReviewStatus, { label: string; variant: "default" | "secondary" | "destructive" }> = {
+  pending: { label: "Pending", variant: "secondary" },
+  approved: { label: "Approved", variant: "default" },
+  disapproved: { label: "Disapproved", variant: "destructive" },
+  ready_to_send: { label: "Ready to send", variant: "default" },
+  flagged: { label: "Flagged", variant: "destructive" },
+};
 
 const VERDICT_VARIANT: Record<DealVerdict, "default" | "secondary" | "destructive"> = {
   Good: "default",
@@ -167,6 +184,127 @@ function BatchEnrichButton() {
   );
 }
 
+function ReviewControls({ r }: { r: ResultView }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [ownerName, setOwnerName] = useState(r.owner_name ?? "");
+  const [phone, setPhone] = useState(r.contact_phone ?? "");
+  const [availability, setAvailability] = useState(r.availability_status ?? "");
+  const [apr, setApr] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await fn();
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const badge = REVIEW_BADGE[r.review_status];
+
+  return (
+    <div className="space-y-2 rounded border border-border bg-secondary/30 p-2">
+      <div className="flex items-center justify-between">
+        <Badge variant={badge.variant} className="text-[10px]">{badge.label}</Badge>
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setEditing((e) => !e)}
+        >
+          {editing ? "Close" : "Edit owner / APR"}
+        </button>
+      </div>
+
+      {/* Approve / Disapprove */}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          className="h-7 flex-1 text-xs"
+          variant={r.review_status === "approved" || r.review_status === "ready_to_send" ? "default" : "outline"}
+          disabled={busy}
+          onClick={() => run(() => approveResult(r.id))}
+        >
+          ✓ Approve
+        </Button>
+        <Button
+          size="sm"
+          className="h-7 flex-1 text-xs"
+          variant="outline"
+          disabled={busy}
+          onClick={() => run(() => disapproveResult(r.id))}
+        >
+          ✕ Disapprove
+        </Button>
+      </div>
+
+      {r.availability_status && (
+        <div className="text-xs"><span className="text-muted-foreground">Availability:</span> {r.availability_status}</div>
+      )}
+
+      {editing && (
+        <div className="space-y-2 pt-1">
+          <div className="space-y-1">
+            <Label className="text-xs" htmlFor={`on-${r.id}`}>Owner name</Label>
+            <Input id={`on-${r.id}`} className="h-7 text-xs" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs" htmlFor={`ph-${r.id}`}>Phone number</Label>
+            <Input id={`ph-${r.id}`} className="h-7 text-xs" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs" htmlFor={`av-${r.id}`}>Availability on talk</Label>
+            <Input id={`av-${r.id}`} className="h-7 text-xs" placeholder="e.g. available July, negotiating" value={availability} onChange={(e) => setAvailability(e.target.value)} />
+          </div>
+          <Button
+            size="sm"
+            className="h-7 w-full text-xs"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                const res = await updateOwnerInfo(r.id, {
+                  owner_name: ownerName,
+                  contact_phone: phone,
+                  availability_status: availability,
+                });
+                if (res.error) setMsg(res.error);
+              })
+            }
+          >
+            Save owner info
+          </Button>
+
+          <div className="space-y-1 border-t border-border pt-2">
+            <Label className="text-xs" htmlFor={`apr-${r.id}`}>Add APR manually (monthly STR revenue $)</Label>
+            <div className="flex gap-2">
+              <Input id={`apr-${r.id}`} className="h-7 text-xs" type="number" value={apr} onChange={(e) => setApr(e.target.value)} />
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    const res = await addManualApr(r.id, Number(apr));
+                    if (res.error) setMsg(res.error);
+                    else setApr("");
+                  })
+                }
+              >
+                Set
+              </Button>
+            </div>
+          </div>
+          {msg && <p className="text-xs text-destructive">{msg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ResultsView({ rows }: { rows: ResultView[] }) {
   const router = useRouter();
   const [showArchived, setShowArchived] = useState(false);
@@ -179,6 +317,7 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
   const [listingType, setListingType] = useState("");
   const [verdict, setVerdict] = useState("");
   const [ownerType, setOwnerType] = useState("");
+  const [reviewStatus, setReviewStatus] = useState("");
   const [sort, setSort] = useState<SortKey>("spread");
   const [page, setPage] = useState(0);
 
@@ -209,6 +348,7 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
       if (listingType && r.listing_type !== listingType) return false;
       if (verdict && r.deal_verdict !== verdict) return false;
       if (ownerType && r.owner_type !== ownerType) return false;
+      if (reviewStatus && r.review_status !== reviewStatus) return false;
       return true;
     });
 
@@ -227,7 +367,7 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
     });
 
     return out;
-  }, [rows, showArchived, minPrice, maxPrice, beds, baths, city, stateFilter, listingType, verdict, ownerType, sort]);
+  }, [rows, showArchived, minPrice, maxPrice, beds, baths, city, stateFilter, listingType, verdict, ownerType, reviewStatus, sort]);
 
   const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
   const pageRows = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -274,6 +414,17 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
               <option value="">All</option>
               <option value="owner">Owner</option>
               <option value="management">Management</option>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="reviewStatus">Review</Label>
+            <Select id="reviewStatus" value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); resetPage(); }}>
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="ready_to_send">Ready to send</option>
+              <option value="flagged">Flagged</option>
+              <option value="disapproved">Disapproved</option>
             </Select>
           </div>
           <div className="space-y-1">
@@ -397,6 +548,8 @@ export function ResultsView({ rows }: { rows: ResultView[] }) {
                 {r.str_monthly_revenue == null && r.city && (
                   <EnrichButton resultId={r.id} />
                 )}
+
+                <ReviewControls r={r} />
 
                 {r.detail_url ? (
                   <div className="flex items-center justify-between pt-1">

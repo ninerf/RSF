@@ -35,3 +35,11 @@ export async function requireAdmin(): Promise<Profile> {
   if (profile.role !== "admin") redirect("/dashboard");
   return profile;
 }
+
+// Staff = admin or worker (the people who review properties). Clients are
+// redirected to their deals view.
+export async function requireStaff(): Promise<Profile> {
+  const profile = await requireProfile();
+  if (profile.role !== "admin" && profile.role !== "worker") redirect("/deals");
+  return profile;
+}

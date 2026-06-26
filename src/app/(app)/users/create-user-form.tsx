@@ -32,8 +32,9 @@ export function CreateUserForm() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="role">Role</Label>
-          <Select id="role" name="role" defaultValue="user">
-            <option value="user">user</option>
+          <Select id="role" name="role" defaultValue="worker">
+            <option value="worker">worker</option>
+            <option value="client">client</option>
             <option value="admin">admin</option>
           </Select>
         </div>

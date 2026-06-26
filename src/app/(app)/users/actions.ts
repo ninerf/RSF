@@ -20,7 +20,7 @@ const CreateUserSchema = z.object({
     .min(3, "Username must be at least 3 characters")
     .regex(/^[a-zA-Z0-9_.-]+$/, "Use letters, numbers, _ . - only"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["admin", "user"]),
+  role: z.enum(["admin", "worker", "client"]),
   can_run_searches: z.boolean(),
 });
 

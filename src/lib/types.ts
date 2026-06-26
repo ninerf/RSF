@@ -1,4 +1,11 @@
-export type Role = "admin" | "user";
+export type Role = "admin" | "worker" | "client";
+
+export type ReviewStatus =
+  | "pending"
+  | "approved"
+  | "disapproved"
+  | "ready_to_send"
+  | "flagged";
 
 export interface Profile {
   id: string;
@@ -122,7 +129,25 @@ export interface ResultRow {
   contact_phone: string | null;
   contact_email: string | null;
   broker_name: string | null;
+  review_status: ReviewStatus;
+  availability_status: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  flagged_by: string | null;
+  flag_note: string | null;
+  archived: boolean;
   raw_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  recipient_id: string;
+  result_id: string | null;
+  type: string;
+  message: string;
+  read: boolean;
+  created_by: string | null;
   created_at: string;
 }
 
