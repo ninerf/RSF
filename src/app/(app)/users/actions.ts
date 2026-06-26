@@ -57,6 +57,17 @@ export async function createUser(
     return { error: "That username is already taken." };
   }
 
+  // Check if an auth user with this internal email already exists
+  // (can happen if a user was deleted but auth user wasn't fully cleaned up).
+  const email = internalEmail(username);
+  const { data: { users: existingAuthUsers } } = await admin.auth.admin.listUsers();
+  const existingAuthUser = existingAuthUsers.find(u => u.email === email);
+  
+  if (existingAuthUser) {
+    // Clean up orphaned auth user before creating new one
+    await admin.auth.admin.deleteUser(existingAuthUser.id);
+  }
+
   // Create the auth user with a confirmed synthetic email.
   const { data: created, error: createErr } = await admin.auth.admin.createUser(
     {
